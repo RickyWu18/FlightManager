@@ -53,7 +53,7 @@ def build():
         print(f"Running: {' '.join(cmd)}")
         subprocess.check_call(cmd)
         
-        print(f"Build complete. Executable: dist/{exe_name}.exe")
+        print(f"Build complete. Executable: dist/{target_name}.exe")
         
     except subprocess.CalledProcessError as e:
         print(f"Build failed: {e}")
