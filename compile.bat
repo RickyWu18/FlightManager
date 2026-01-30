@@ -18,7 +18,7 @@ pip install -r requirements.txt
 pip install pyinstaller
 
 echo Building FlightManager...
-pyinstaller --noconfirm --onefile --windowed --name "FlightManager" --hidden-import "babel.numbers" main.py
+python build.py
 
 echo Deactivating virtual environment...
 deactivate
