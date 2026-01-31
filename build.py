@@ -35,8 +35,21 @@ def build():
         
         with open(version_file, "w", encoding="utf-8") as f:
             f.write(new_content)
+
+        # 3. Handle Icons
+        from PIL import Image
+        icon_png = "icon.png"
+        build_dir = "build"
+        if not os.path.exists(build_dir):
+            os.makedirs(build_dir)
+        icon_ico = os.path.join(build_dir, "icon.ico")
+        
+        if os.path.exists(icon_png):
+            print(f"Converting {icon_png} to {icon_ico}...")
+            img = Image.open(icon_png)
+            img.save(icon_ico, format='ICO', sizes=[(256, 256), (128, 128), (64, 64), (48, 48), (32, 32), (16, 16)])
             
-        # 3. Run PyInstaller
+        # 4. Run PyInstaller
         # If a name is passed as argument, use it. Otherwise use FlightManager-{version}
         target_name = sys.argv[1] if len(sys.argv) > 1 else f"FlightManager-{version}"
         
@@ -47,8 +60,13 @@ def build():
             "--windowed",
             "--name", target_name,
             "--hidden-import", "babel.numbers",
-            "main.py"
+            "--add-data", "icon.png;.",
         ]
+
+        if os.path.exists(icon_ico):
+            cmd.extend(["--icon", icon_ico])
+
+        cmd.append("main.py")
         
         print(f"Running: {' '.join(cmd)}")
         subprocess.check_call(cmd)

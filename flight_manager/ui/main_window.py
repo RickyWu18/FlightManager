@@ -7,6 +7,8 @@ flight log display, and interaction with the database and file system.
 import datetime
 import json
 import math
+import os
+import sys
 import threading
 import tkinter as tk
 from tkinter import filedialog, messagebox, scrolledtext, ttk
@@ -25,6 +27,24 @@ from flight_manager.ui.dialogs import (
 )
 
 
+def get_resource_path(relative_path: str) -> str:
+    """Gets the absolute path to a resource, supporting both dev and PyInstaller.
+
+    Args:
+        relative_path: The relative path to the resource.
+
+    Returns:
+        The absolute path to the resource.
+    """
+    try:
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+
+    return os.path.join(base_path, relative_path)
+
+
 class FlightManagerApp:
     """The main application class for Flight Manager."""
 
@@ -38,6 +58,15 @@ class FlightManagerApp:
         self.root.title("Flight Manager Logger")
         self.root.geometry("1100x850")
         self.root.minsize(500, 400)
+
+        # Set Window Icon
+        icon_path = get_resource_path("icon.png")
+        if os.path.exists(icon_path):
+            try:
+                self.icon_img = tk.PhotoImage(file=icon_path)
+                self.root.iconphoto(True, self.icon_img)
+            except Exception:
+                pass
 
         # Database Setup
         self.db = DatabaseManager()
