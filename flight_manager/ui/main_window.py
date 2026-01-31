@@ -7,6 +7,8 @@ flight log display, and interaction with the database and file system.
 import datetime
 import json
 import math
+import os
+import sys
 import threading
 import tkinter as tk
 from tkinter import filedialog, messagebox, scrolledtext, ttk
@@ -25,6 +27,24 @@ from flight_manager.ui.dialogs import (
 )
 
 
+def get_resource_path(relative_path: str) -> str:
+    """Gets the absolute path to a resource, supporting both dev and PyInstaller.
+
+    Args:
+        relative_path: The relative path to the resource.
+
+    Returns:
+        The absolute path to the resource.
+    """
+    try:
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+
+    return os.path.join(base_path, relative_path)
+
+
 class FlightManagerApp:
     """The main application class for Flight Manager."""
 
@@ -37,6 +57,16 @@ class FlightManagerApp:
         self.root = root
         self.root.title("Flight Manager Logger")
         self.root.geometry("1100x850")
+        self.root.minsize(500, 400)
+
+        # Set Window Icon
+        icon_path = get_resource_path("icon.png")
+        if os.path.exists(icon_path):
+            try:
+                self.icon_img = tk.PhotoImage(file=icon_path)
+                self.root.iconphoto(True, self.icon_img)
+            except Exception:
+                pass
 
         # Database Setup
         self.db = DatabaseManager()
@@ -91,11 +121,12 @@ class FlightManagerApp:
             # If current date is invalid, reset to today
             self.filter_date.set(datetime.date.today().strftime("%Y-%m-%d"))
 
-    def pick_date(self, var: tk.StringVar):
+    def pick_date(self, var: tk.StringVar, widget: tk.Widget = None):
         """Opens a calendar dialog to pick a date.
 
         Args:
             var: The StringVar to update with the selected date.
+            widget: The widget to position the dialog relative to.
         """
 
         def on_date_selected(date_str: str):
@@ -103,7 +134,7 @@ class FlightManagerApp:
             if var == self.log_date_var:
                 self.calculate_next_id()
 
-        CalendarDialog(self.root, on_date_selected)
+        CalendarDialog(self.root, on_date_selected, widget)
 
     def create_menu(self):
         """Creates the application menu bar."""
@@ -163,9 +194,7 @@ class FlightManagerApp:
             settings = self.db.get_all_settings()
             with open(filename, "w", encoding="utf-8") as f:
                 json.dump(settings, f, indent=4)
-            messagebox.showinfo(
-                "Success", f"Settings exported to:\n{filename}"
-            )
+            messagebox.showinfo("Success", f"Settings exported to:\n{filename}")
         except Exception as e:
             messagebox.showerror(
                 "Export Error", f"Failed to export settings:\n{e}"
@@ -208,14 +237,14 @@ class FlightManagerApp:
 
     def create_widgets(self):
         """Creates and arranges the main window widgets."""
-        main_pane = ttk.PanedWindow(self.root, orient=tk.HORIZONTAL)
+        main_pane = tk.PanedWindow(self.root, orient=tk.HORIZONTAL, sashwidth=4)
         main_pane.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
         # --- Left Frame: Input ---
         self.input_frame = ttk.LabelFrame(
             main_pane, text="Log Entry", padding=(10, 10)
         )
-        main_pane.add(self.input_frame, weight=1)
+        main_pane.add(self.input_frame, minsize=500)
 
         # Date
         ttk.Label(self.input_frame, text="Date (YYYY-MM-DD):").grid(
@@ -224,7 +253,9 @@ class FlightManagerApp:
         self.btn_date = ttk.Button(
             self.input_frame,
             textvariable=self.log_date_var,
-            command=lambda: self.pick_date(self.log_date_var),
+        )
+        self.btn_date.configure(
+            command=lambda: self.pick_date(self.log_date_var, self.btn_date)
         )
         self.btn_date.grid(row=0, column=1, sticky="ew", pady=5)
 
@@ -347,11 +378,11 @@ class FlightManagerApp:
         ttk.Button(btn_frame, text="Save Log", command=self.save_log).pack(
             side=tk.LEFT, padx=5
         )
-        ttk.Button(
-            btn_frame, text="Clear Form", command=self.clear_form
-        ).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="Clear Form", command=self.clear_form).pack(
+            side=tk.LEFT, padx=5
+        )
 
-        self.input_frame.columnconfigure(1, weight=1)
+        self.input_frame.columnconfigure(1, weight=1, minsize=300)
         self.input_frame.rowconfigure(4, weight=1)  # Checklist
         self.input_frame.rowconfigure(7, weight=1)  # Note
 
@@ -361,7 +392,7 @@ class FlightManagerApp:
             text="Flight History (Double-click for Details)",
             padding=(10, 10),
         )
-        main_pane.add(self.history_frame, weight=4)
+        main_pane.add(self.history_frame)
 
         # Filter Bar
         filter_frame = ttk.Frame(self.history_frame)
@@ -386,7 +417,11 @@ class FlightManagerApp:
             filter_frame,
             textvariable=self.filter_date,
             width=10,
-            command=lambda: self.pick_date(self.filter_date),
+        )
+        self.btn_filter_date.configure(
+            command=lambda: self.pick_date(
+                self.filter_date, self.btn_filter_date
+            )
         )
         self.btn_filter_date.pack(side=tk.LEFT, padx=(2, 2))
         ttk.Button(
@@ -397,9 +432,7 @@ class FlightManagerApp:
         ).pack(side=tk.LEFT, padx=(0, 2))
 
         # Vehicle Filter
-        ttk.Label(filter_frame, text="Vehicle:").pack(
-            side=tk.LEFT, padx=(0, 2)
-        )
+        ttk.Label(filter_frame, text="Vehicle:").pack(side=tk.LEFT, padx=(0, 2))
         self.combo_filter_vehicle = ttk.Combobox(
             filter_frame,
             textvariable=self.filter_vehicle,
@@ -419,9 +452,9 @@ class FlightManagerApp:
             "<<ComboboxSelected>>", lambda e: self.load_logs_debounced()
         )
 
-        ttk.Button(
-            filter_frame, text="Reset", command=self.reset_filter
-        ).pack(side=tk.LEFT)
+        ttk.Button(filter_frame, text="Reset", command=self.reset_filter).pack(
+            side=tk.LEFT
+        )
 
         # Pagination Controls
         self.pagination_frame = ttk.Frame(self.history_frame)
@@ -454,9 +487,7 @@ class FlightManagerApp:
             self.history_frame, columns=columns, show="headings"
         )
 
-        self.tree.heading(
-            "id", text="ID", command=lambda: self.sort_logs("id")
-        )
+        self.tree.heading("id", text="ID", command=lambda: self.sort_logs("id"))
         self.tree.column("id", width=0, stretch=False)
 
         self.tree.heading(
@@ -464,9 +495,9 @@ class FlightManagerApp:
             text="Flight ID",
             command=lambda: self.sort_logs("flight_no"),
         )
-        self.tree.heading(
-            "date", text="Date", command=lambda: self.sort_logs("date")
-        )
+        # self.tree.heading(
+        #     "date", text="Date", command=lambda: self.sort_logs("date")
+        # )
         self.tree.heading(
             "vehicle",
             text="Vehicle",
@@ -483,7 +514,7 @@ class FlightManagerApp:
         )
 
         self.tree.column("flight_no", width=60)
-        self.tree.column("date", width=80)
+        self.tree.column("date", width=0, stretch=False)
         self.tree.column("vehicle", width=100)
         self.tree.column("mission", width=150)
         self.tree.column("note", width=300)

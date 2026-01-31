@@ -15,18 +15,32 @@ from tkcalendar import Calendar
 class CalendarDialog(tk.Toplevel):
     """A modal dialog containing a calendar widget."""
 
-    def __init__(self, parent: tk.Widget, callback: Callable[[str], None]):
+    def __init__(
+        self,
+        parent: tk.Widget,
+        callback: Callable[[str], None],
+        widget: tk.Widget = None,
+    ):
         """Initializes the CalendarDialog.
 
         Args:
             parent: The parent widget.
             callback: A function to call with the selected date string.
+            widget: The widget to position the dialog relative to (optional).
         """
         super().__init__(parent)
         self.callback = callback
         self.title("Select Date")
         self.geometry("300x250")
         self.transient(parent)
+
+        # Position relative to widget if provided
+        if widget:
+            self.update_idletasks()  # Ensure widget geometry is updated
+            x = widget.winfo_rootx()
+            y = widget.winfo_rooty() + widget.winfo_height()
+            self.geometry(f"+{x}+{y}")
+
         self.grab_set()
 
         self.current_date = datetime.date.today()
@@ -50,15 +64,15 @@ class CalendarDialog(tk.Toplevel):
         btn_frame = ttk.Frame(self)
         btn_frame.pack(fill=tk.X, pady=5)
 
-        ttk.Button(
-            btn_frame, text="Today", command=self.set_today
-        ).pack(side=tk.LEFT, padx=10)
-        ttk.Button(
-            btn_frame, text="Select", command=self.confirm_date
-        ).pack(side=tk.RIGHT, padx=10)
-        ttk.Button(
-            btn_frame, text="Cancel", command=self.destroy
-        ).pack(side=tk.RIGHT, padx=5)
+        ttk.Button(btn_frame, text="Today", command=self.set_today).pack(
+            side=tk.LEFT, padx=10
+        )
+        ttk.Button(btn_frame, text="Select", command=self.confirm_date).pack(
+            side=tk.RIGHT, padx=10
+        )
+        ttk.Button(btn_frame, text="Cancel", command=self.destroy).pack(
+            side=tk.RIGHT, padx=5
+        )
 
         self.cal.bind("<Double-1>", lambda e: self.confirm_date())
 

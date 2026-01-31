@@ -4,9 +4,8 @@ This module handles all SQLite database interactions, including table creation,
 data insertion, querying, and schema migrations.
 """
 
-import datetime
 import sqlite3
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple
 
 
 class DatabaseManager:
@@ -26,7 +25,8 @@ class DatabaseManager:
         cursor = self.conn.cursor()
 
         # Main logs table
-        cursor.execute("""
+        cursor.execute(
+            """
             CREATE TABLE IF NOT EXISTS logs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 flight_no TEXT NOT NULL,
@@ -39,7 +39,8 @@ class DatabaseManager:
                 log_file_path TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
-        """)
+        """
+        )
 
         # Migrations (idempotent)
         migrations = [
@@ -55,7 +56,8 @@ class DatabaseManager:
                 pass
 
         # Checklist configuration table
-        cursor.execute("""
+        cursor.execute(
+            """
             CREATE TABLE IF NOT EXISTS checklist_config (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 item_name TEXT NOT NULL UNIQUE,
@@ -63,23 +65,25 @@ class DatabaseManager:
                 options TEXT,
                 order_index INTEGER DEFAULT 0
             )
-        """)
+        """
+        )
         try:
             cursor.execute(
-                "ALTER TABLE checklist_config "
-                "ADD COLUMN order_index INTEGER DEFAULT 0"
+                "ALTER TABLE checklist_config ADD COLUMN order_index INTEGER DEFAULT 0"
             )
         except sqlite3.OperationalError:
             pass
 
         # Vehicles table
-        cursor.execute("""
+        cursor.execute(
+            """
             CREATE TABLE IF NOT EXISTS vehicles (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL UNIQUE,
                 is_archived INTEGER DEFAULT 0
             )
-        """)
+        """
+        )
         try:
             cursor.execute(
                 "ALTER TABLE vehicles ADD COLUMN is_archived INTEGER DEFAULT 0"
@@ -88,12 +92,14 @@ class DatabaseManager:
             pass
 
         # Ignore Patterns table
-        cursor.execute("""
+        cursor.execute(
+            """
             CREATE TABLE IF NOT EXISTS ignore_patterns (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 pattern TEXT NOT NULL UNIQUE
             )
-        """)
+        """
+        )
 
         self.conn.commit()
         self.seed_defaults()
@@ -116,7 +122,12 @@ class DatabaseManager:
                 ("Battery Charged", "checkbox", None, 0),
                 ("Props Secure", "checkbox", None, 1),
                 ("GPS Lock", "checkbox", None, 2),
-                ("Flight Mode", "single_select", "Stabilize,Loiter,Auto,RTL", 3),
+                (
+                    "Flight Mode",
+                    "single_select",
+                    "Stabilize,Loiter,Auto,RTL",
+                    3,
+                ),
                 ("Voltage (V)", "text", None, 4),
             ]
             cursor.executemany(
@@ -261,13 +272,9 @@ class DatabaseManager:
             id2: The ID of the second item.
         """
         c = self.conn.cursor()
-        c.execute(
-            "SELECT order_index FROM checklist_config WHERE id=?", (id1,)
-        )
+        c.execute("SELECT order_index FROM checklist_config WHERE id=?", (id1,))
         o1 = c.fetchone()[0]
-        c.execute(
-            "SELECT order_index FROM checklist_config WHERE id=?", (id2,)
-        )
+        c.execute("SELECT order_index FROM checklist_config WHERE id=?", (id2,))
         o2 = c.fetchone()[0]
 
         self.conn.execute(
@@ -488,9 +495,7 @@ class DatabaseManager:
         )
         return cursor.fetchone()
 
-    def get_log_history_for_vehicle(
-        self, vehicle_name: str
-    ) -> List[Tuple]:
+    def get_log_history_for_vehicle(self, vehicle_name: str) -> List[Tuple]:
         """Retrieves log history for a specific vehicle.
 
         Args:
@@ -525,8 +530,7 @@ class DatabaseManager:
 
         # Checklist
         cursor.execute(
-            "SELECT item_name, item_type, options, order_index "
-            "FROM checklist_config"
+            "SELECT item_name, item_type, options, order_index FROM checklist_config"
         )
         settings["checklist"] = [
             {
