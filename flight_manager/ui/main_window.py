@@ -196,7 +196,9 @@ class FlightManagerApp:
                 json.dump(settings, f, indent=4)
             messagebox.showinfo("Success", f"Settings exported to:\n{filename}")
         except Exception as e:
-            messagebox.showerror("Export Error", f"Failed to export settings:\n{e}")
+            messagebox.showerror(
+                "Export Error", f"Failed to export settings:\n{e}"
+            )
 
     def import_settings(self):
         """Imports settings from a JSON file."""
@@ -229,7 +231,9 @@ class FlightManagerApp:
 
             messagebox.showinfo("Success", "Settings imported successfully!")
         except Exception as e:
-            messagebox.showerror("Import Error", f"Failed to import settings:\n{e}")
+            messagebox.showerror(
+                "Import Error", f"Failed to import settings:\n{e}"
+            )
 
     def create_widgets(self):
         """Creates and arranges the main window widgets."""
@@ -237,7 +241,9 @@ class FlightManagerApp:
         main_pane.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
         # --- Left Frame: Input ---
-        self.input_frame = ttk.LabelFrame(main_pane, text="Log Entry", padding=(10, 10))
+        self.input_frame = ttk.LabelFrame(
+            main_pane, text="Log Entry", padding=(10, 10)
+        )
         main_pane.add(self.input_frame, minsize=500)
 
         # Date
@@ -300,10 +306,14 @@ class FlightManagerApp:
 
         self.checklist_frame.bind(
             "<Configure>",
-            lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all")),
+            lambda e: self.canvas.configure(
+                scrollregion=self.canvas.bbox("all")
+            ),
         )
 
-        self.canvas.create_window((0, 0), window=self.checklist_frame, anchor="nw")
+        self.canvas.create_window(
+            (0, 0), window=self.checklist_frame, anchor="nw"
+        )
         self.canvas.configure(yscrollcommand=scrollbar.set)
 
         self.canvas.pack(side="left", fill="both", expand=True)
@@ -320,12 +330,14 @@ class FlightManagerApp:
         param_frame.grid(row=5, column=1, columnspan=2, sticky="ew", pady=5)
 
         self.entry_param_file = ttk.Entry(param_frame)
-        self.entry_param_file.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
+        self.entry_param_file.pack(
+            side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5)
+        )
         self.entry_param_file.state(["readonly"])
 
-        ttk.Button(param_frame, text="Browse...", command=self.browse_param_file).pack(
-            side=tk.LEFT, padx=2
-        )
+        ttk.Button(
+            param_frame, text="Browse...", command=self.browse_param_file
+        ).pack(side=tk.LEFT, padx=2)
         ttk.Button(
             param_frame, text="Compare", command=self.compare_params_from_input
         ).pack(side=tk.LEFT, padx=2)
@@ -339,12 +351,14 @@ class FlightManagerApp:
         log_frame.grid(row=6, column=1, columnspan=2, sticky="ew", pady=5)
 
         self.entry_log_file = ttk.Entry(log_frame)
-        self.entry_log_file.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
+        self.entry_log_file.pack(
+            side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5)
+        )
         self.entry_log_file.state(["readonly"])
 
-        ttk.Button(log_frame, text="Browse...", command=self.browse_log_file).pack(
-            side=tk.LEFT, padx=2
-        )
+        ttk.Button(
+            log_frame, text="Browse...", command=self.browse_log_file
+        ).pack(side=tk.LEFT, padx=2)
 
         # Note Section
         ttk.Label(self.input_frame, text="Note:").grid(
@@ -353,7 +367,9 @@ class FlightManagerApp:
         self.text_note = scrolledtext.ScrolledText(
             self.input_frame, height=4, width=40, font=("Segoe UI", 9)
         )
-        self.text_note.grid(row=7, column=1, columnspan=2, sticky="nsew", pady=5)
+        self.text_note.grid(
+            row=7, column=1, columnspan=2, sticky="nsew", pady=5
+        )
 
         # Buttons
         btn_frame = ttk.Frame(self.input_frame)
@@ -403,7 +419,9 @@ class FlightManagerApp:
             width=10,
         )
         self.btn_filter_date.configure(
-            command=lambda: self.pick_date(self.filter_date, self.btn_filter_date)
+            command=lambda: self.pick_date(
+                self.filter_date, self.btn_filter_date
+            )
         )
         self.btn_filter_date.pack(side=tk.LEFT, padx=(2, 2))
         ttk.Button(
@@ -424,7 +442,9 @@ class FlightManagerApp:
         self.combo_filter_vehicle.pack(side=tk.LEFT, padx=(0, 10))
 
         # Auto-refresh triggers
-        self.filter_id.trace("w", lambda name, index, mode: self.load_logs_debounced())
+        self.filter_id.trace(
+            "w", lambda name, index, mode: self.load_logs_debounced()
+        )
         self.filter_date.trace(
             "w", lambda name, index, mode: self.load_logs_debounced()
         )
@@ -448,7 +468,9 @@ class FlightManagerApp:
         )
         self.btn_prev_page.pack(side=tk.LEFT, padx=5)
 
-        self.lbl_page_info = ttk.Label(self.pagination_frame, text="Page 1 of 1")
+        self.lbl_page_info = ttk.Label(
+            self.pagination_frame, text="Page 1 of 1"
+        )
         self.lbl_page_info.pack(side=tk.LEFT, padx=5)
 
         self.btn_next_page = ttk.Button(
@@ -461,7 +483,9 @@ class FlightManagerApp:
 
         # Treeview
         columns = ("id", "flight_no", "date", "vehicle", "mission", "note")
-        self.tree = ttk.Treeview(self.history_frame, columns=columns, show="headings")
+        self.tree = ttk.Treeview(
+            self.history_frame, columns=columns, show="headings"
+        )
 
         self.tree.heading("id", text="ID", command=lambda: self.sort_logs("id"))
         self.tree.column("id", width=0, stretch=False)
@@ -485,7 +509,9 @@ class FlightManagerApp:
             text="Mission Title",
             command=lambda: self.sort_logs("mission_title"),
         )
-        self.tree.heading("note", text="Note", command=lambda: self.sort_logs("note"))
+        self.tree.heading(
+            "note", text="Note", command=lambda: self.sort_logs("note")
+        )
 
         self.tree.column("flight_no", width=60)
         self.tree.column("date", width=0, stretch=False)
@@ -615,7 +641,11 @@ class FlightManagerApp:
                 self.dynamic_widgets[name] = {"type": "text", "var": entry}
             elif itype == "single_select":
                 ttk.Label(frame, text=f"{name}:", width=20).pack(side=tk.LEFT)
-                vals = [opt.strip() for opt in options.split(",")] if options else []
+                vals = (
+                    [opt.strip() for opt in options.split(",")]
+                    if options
+                    else []
+                )
                 combo = ttk.Combobox(frame, values=vals, state="readonly")
                 combo.pack(side=tk.LEFT, fill=tk.X, expand=True)
                 self.dynamic_widgets[name] = {
@@ -679,7 +709,9 @@ class FlightManagerApp:
             messagebox.showwarning("Validation Error", "Flight ID is required!")
             return
         if not vehicle:
-            messagebox.showwarning("Validation Error", "Vehicle selection is required!")
+            messagebox.showwarning(
+                "Validation Error", "Vehicle selection is required!"
+            )
             return
 
         # Prepare Param Content
@@ -705,7 +737,9 @@ class FlightManagerApp:
             else:
                 val = data["var"].get().strip()  # String
 
-            checklist_data.append({"name": name, "type": item_type, "value": val})
+            checklist_data.append(
+                {"name": name, "type": item_type, "value": val}
+            )
         system_check_json = json.dumps(checklist_data)
 
         # Data Packet
@@ -733,7 +767,9 @@ class FlightManagerApp:
             daemon=True,
         ).start()
 
-    def _save_log_thread(self, log_data: Dict[str, Any], log_source: Optional[str]):
+    def _save_log_thread(
+        self, log_data: Dict[str, Any], log_source: Optional[str]
+    ):
         """Threaded function to handle file copying and database insertion."""
         try:
             saved_log_path = None
@@ -806,8 +842,12 @@ class FlightManagerApp:
         filter_vehicle = self.filter_vehicle.get()
 
         # Get count for pagination
-        total_count = self.db.get_logs_count(filter_id, filter_date, filter_vehicle)
-        total_pages = math.ceil(total_count / self.page_size) if total_count > 0 else 1
+        total_count = self.db.get_logs_count(
+            filter_id, filter_date, filter_vehicle
+        )
+        total_pages = (
+            math.ceil(total_count / self.page_size) if total_count > 0 else 1
+        )
 
         if self.page >= total_pages:
             self.page = total_pages - 1
@@ -854,7 +894,9 @@ class FlightManagerApp:
             text=f"Page {self.page + 1} of {total_pages} (Total: {total_count})"
         )
 
-        self.btn_prev_page.state(["!disabled"] if self.page > 0 else ["disabled"])
+        self.btn_prev_page.state(
+            ["!disabled"] if self.page > 0 else ["disabled"]
+        )
         self.btn_next_page.state(
             ["!disabled"] if self.page < total_pages - 1 else ["disabled"]
         )

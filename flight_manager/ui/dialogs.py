@@ -9,7 +9,7 @@ import os
 import shutil
 import tkinter as tk
 from tkinter import filedialog, messagebox, scrolledtext, ttk
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Optional
 
 from flight_manager.utils import compare_params
 
@@ -18,10 +18,7 @@ class BaseSettingsDialog(tk.Toplevel):
     """Base class for settings dialogs."""
 
     def __init__(
-        self,
-        parent: tk.Widget,
-        title: str,
-        geometry: str = "400x400"
+        self, parent: tk.Widget, title: str, geometry: str = "400x400"
     ):
         """Initializes the BaseSettingsDialog.
 
@@ -32,13 +29,21 @@ class BaseSettingsDialog(tk.Toplevel):
         """
         super().__init__(parent)
         self.title(title)
-        
+
         # Center the window relative to parent
         try:
-            width, height = map(int, geometry.split('x'))
+            width, height = map(int, geometry.split("x"))
             parent.update_idletasks()
-            x = parent.winfo_rootx() + (parent.winfo_width() // 2) - (width // 2)
-            y = parent.winfo_rooty() + (parent.winfo_height() // 2) - (height // 2)
+            x = (
+                parent.winfo_rootx()
+                + (parent.winfo_width() // 2)
+                - (width // 2)
+            )
+            y = (
+                parent.winfo_rooty()
+                + (parent.winfo_height() // 2)
+                - (height // 2)
+            )
             self.geometry(f"{geometry}+{x}+{y}")
         except ValueError:
             # Fallback if geometry string is complex or invalid
@@ -74,7 +79,9 @@ class IgnoreSettingsDialog(BaseSettingsDialog):
 
         # Listbox (Left)
         self.lb = tk.Listbox(list_frame, height=10, font=("Segoe UI", 11))
-        scrollbar = ttk.Scrollbar(list_frame, orient="vertical", command=self.lb.yview)
+        scrollbar = ttk.Scrollbar(
+            list_frame, orient="vertical", command=self.lb.yview
+        )
         self.lb.configure(yscrollcommand=scrollbar.set)
 
         self.lb.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
@@ -85,13 +92,18 @@ class IgnoreSettingsDialog(BaseSettingsDialog):
         side_btn_frame.pack(side=tk.RIGHT, fill=tk.Y)
 
         ttk.Button(
-            side_btn_frame, text="Delete Selected", command=self.delete_item, width=15
+            side_btn_frame,
+            text="Delete Selected",
+            command=self.delete_item,
+            width=15,
         ).pack(fill=tk.X, pady=2)
 
         self.load_list()
 
         # --- Bottom Section: Add New ---
-        add_frame = ttk.LabelFrame(content_frame, text="Add New Pattern", padding=15)
+        add_frame = ttk.LabelFrame(
+            content_frame, text="Add New Pattern", padding=15
+        )
         add_frame.pack(fill=tk.X)
 
         add_frame.columnconfigure(0, weight=1)
@@ -155,11 +167,15 @@ class VehicleSettingsDialog(BaseSettingsDialog):
         list_frame = ttk.Frame(content_frame)
         list_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 15))
 
-        ttk.Label(list_frame, text="Current Vehicles:").pack(anchor="w", pady=(0, 5))
+        ttk.Label(list_frame, text="Current Vehicles:").pack(
+            anchor="w", pady=(0, 5)
+        )
 
         # Listbox (Left)
         self.lb = tk.Listbox(list_frame, height=10, font=("Segoe UI", 11))
-        scrollbar = ttk.Scrollbar(list_frame, orient="vertical", command=self.lb.yview)
+        scrollbar = ttk.Scrollbar(
+            list_frame, orient="vertical", command=self.lb.yview
+        )
         self.lb.configure(yscrollcommand=scrollbar.set)
 
         self.lb.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
@@ -173,19 +189,21 @@ class VehicleSettingsDialog(BaseSettingsDialog):
             side_btn_frame,
             text="Toggle Archive",
             command=self.toggle_archive,
-            width=15
+            width=15,
         ).pack(fill=tk.X, pady=2)
 
         self.load_list()
 
         # --- Bottom Section: Add New (Moved back to bottom and kept taller) ---
-        add_frame = ttk.LabelFrame(content_frame, text="Add New Vehicle", padding=15)
+        add_frame = ttk.LabelFrame(
+            content_frame, text="Add New Vehicle", padding=15
+        )
         add_frame.pack(fill=tk.X)
 
         add_frame.columnconfigure(0, weight=1)
         self.entry_new = ttk.Entry(add_frame, font=("Segoe UI", 11))
         self.entry_new.grid(row=0, column=0, sticky="ew", padx=(0, 10), ipady=3)
-        
+
         ttk.Button(
             add_frame, text="Add Vehicle", command=self.add_item, width=15
         ).grid(row=0, column=1, sticky="e", ipady=1)
@@ -198,7 +216,7 @@ class VehicleSettingsDialog(BaseSettingsDialog):
         for name, archived in self.db.get_vehicles(include_archived=True):
             display = name + (" [ARCHIVED]" if archived else "")
             self.lb.insert(tk.END, display)
-            # Optional: color code archived items if desired, but standard Listbox 
+            # Optional: color code archived items if desired, but standard Listbox
             # item config is a bit verbose. Keeping simple text for now.
 
     def add_item(self):
@@ -266,7 +284,7 @@ class ChecklistSettingsDialog(BaseSettingsDialog):
         self.tree.heading("name", text="Name")
         self.tree.heading("type", text="Type")
         self.tree.heading("options", text="Options")
-        
+
         self.tree.column("name", width=200)
         self.tree.column("type", width=100)
         self.tree.column("options", width=150)
@@ -283,11 +301,19 @@ class ChecklistSettingsDialog(BaseSettingsDialog):
         btn_frame = ttk.Frame(top_frame, padding=(10, 0))
         btn_frame.pack(side=tk.RIGHT, fill=tk.Y)
 
-        ttk.Button(btn_frame, text="▲ Move Up", command=lambda: self.move_item(-1)).pack(fill=tk.X, pady=2)
-        ttk.Button(btn_frame, text="▼ Move Down", command=lambda: self.move_item(1)).pack(fill=tk.X, pady=2)
+        ttk.Button(
+            btn_frame, text="▲ Move Up", command=lambda: self.move_item(-1)
+        ).pack(fill=tk.X, pady=2)
+        ttk.Button(
+            btn_frame, text="▼ Move Down", command=lambda: self.move_item(1)
+        ).pack(fill=tk.X, pady=2)
         ttk.Separator(btn_frame, orient="horizontal").pack(fill=tk.X, pady=5)
-        ttk.Button(btn_frame, text="Edit", command=self.edit_item).pack(fill=tk.X, pady=2)
-        ttk.Button(btn_frame, text="Delete", command=self.delete_item).pack(fill=tk.X, pady=2)
+        ttk.Button(btn_frame, text="Edit", command=self.edit_item).pack(
+            fill=tk.X, pady=2
+        )
+        ttk.Button(btn_frame, text="Delete", command=self.delete_item).pack(
+            fill=tk.X, pady=2
+        )
 
         # --- Bottom Section: Add New ---
         self.create_add_ui(content_frame)
@@ -305,15 +331,17 @@ class ChecklistSettingsDialog(BaseSettingsDialog):
         self.checklist_map = {}
 
         checklist_items = self.db.get_checklist_items()
-        
+
         for name, itype, opts, pid, _ in checklist_items:
             opts_display = opts if opts else ""
-            item_id = self.tree.insert("", tk.END, values=(name, itype, opts_display))
+            item_id = self.tree.insert(
+                "", tk.END, values=(name, itype, opts_display)
+            )
             self.checklist_map[item_id] = {
                 "id": pid,
                 "name": name,
                 "type": itype,
-                "options": opts
+                "options": opts,
             }
 
     def create_add_ui(self, parent):
@@ -324,11 +352,15 @@ class ChecklistSettingsDialog(BaseSettingsDialog):
         grid_frame = ttk.Frame(ctrl_frame)
         grid_frame.pack(fill=tk.X)
 
-        ttk.Label(grid_frame, text="Name:").grid(row=0, column=0, sticky="w", pady=2)
+        ttk.Label(grid_frame, text="Name:").grid(
+            row=0, column=0, sticky="w", pady=2
+        )
         self.entry_new = ttk.Entry(grid_frame)
         self.entry_new.grid(row=0, column=1, sticky="ew", padx=5, pady=2)
 
-        ttk.Label(grid_frame, text="Type:").grid(row=1, column=0, sticky="w", pady=2)
+        ttk.Label(grid_frame, text="Type:").grid(
+            row=1, column=0, sticky="w", pady=2
+        )
         self.type_var = tk.StringVar(value="checkbox")
         type_combo = ttk.Combobox(
             grid_frame,
@@ -346,7 +378,9 @@ class ChecklistSettingsDialog(BaseSettingsDialog):
 
         grid_frame.columnconfigure(1, weight=1)
 
-        ttk.Button(ctrl_frame, text="Add Item", command=self.add_item).pack(pady=(10, 0), anchor="e")
+        ttk.Button(ctrl_frame, text="Add Item", command=self.add_item).pack(
+            pady=(10, 0), anchor="e"
+        )
 
     def toggle_options(self, event=None):
         """Toggles the visibility of the options entry."""
@@ -362,9 +396,7 @@ class ChecklistSettingsDialog(BaseSettingsDialog):
         val = self.entry_new.get().strip()
         itype = self.type_var.get()
         opts = (
-            self.entry_opts.get().strip()
-            if itype == "single_select"
-            else None
+            self.entry_opts.get().strip() if itype == "single_select" else None
         )
 
         if val:
@@ -391,7 +423,7 @@ class ChecklistSettingsDialog(BaseSettingsDialog):
 
         idx = self.tree.index(sel_item_id)
         children = self.tree.get_children()
-        
+
         if direction == -1 and idx > 0:
             swap_item_id = children[idx - 1]
         elif direction == 1 and idx < len(children) - 1:
@@ -404,7 +436,7 @@ class ChecklistSettingsDialog(BaseSettingsDialog):
 
         self.db.swap_checklist_order(db_id1, db_id2)
         self.load_list()
-        
+
         # Restore selection using the DB ID logic (find the new tree item that has the same DB ID)
         for item in self.tree.get_children():
             if self.checklist_map[item]["id"] == db_id1:
@@ -430,7 +462,7 @@ class ChecklistSettingsDialog(BaseSettingsDialog):
             return
 
         data = self.checklist_map[sel_item_id]
-        
+
         # Create a simple modal dialog
         dlg = tk.Toplevel(self)
         dlg.title("Edit Item")
@@ -455,7 +487,10 @@ class ChecklistSettingsDialog(BaseSettingsDialog):
         ttk.Label(main_frame, text="Type:").pack(anchor="w")
         type_var = tk.StringVar(value=data["type"])
         combo_type = ttk.Combobox(
-            main_frame, textvariable=type_var, values=["checkbox", "text", "single_select"], state="readonly"
+            main_frame,
+            textvariable=type_var,
+            values=["checkbox", "text", "single_select"],
+            state="readonly",
         )
         combo_type.pack(fill=tk.X, pady=(5, 10))
 
@@ -465,7 +500,7 @@ class ChecklistSettingsDialog(BaseSettingsDialog):
 
         lbl_opts = ttk.Label(opts_container, text="Options (comma sep):")
         entry_opts = ttk.Entry(opts_container)
-        
+
         def update_opts_visibility(event=None):
             if type_var.get() == "single_select":
                 lbl_opts.pack(anchor="w")
@@ -475,42 +510,49 @@ class ChecklistSettingsDialog(BaseSettingsDialog):
                 entry_opts.pack_forget()
 
         combo_type.bind("<<ComboboxSelected>>", update_opts_visibility)
-        
+
         if data["options"]:
             entry_opts.insert(0, data["options"])
-        
+
         update_opts_visibility()
 
         def save_edit():
             new_name = entry_name.get().strip()
             new_type = type_var.get()
-            new_opts = entry_opts.get().strip() if new_type == "single_select" else None
+            new_opts = (
+                entry_opts.get().strip()
+                if new_type == "single_select"
+                else None
+            )
 
             if not new_name:
-                messagebox.showwarning("Warning", "Name cannot be empty.", parent=dlg)
+                messagebox.showwarning(
+                    "Warning", "Name cannot be empty.", parent=dlg
+                )
                 return
 
             try:
                 cursor = self.db.conn.cursor()
                 cursor.execute(
                     "UPDATE checklist_items SET name=?, type=?, options=? WHERE id=?",
-                    (new_name, new_type, new_opts, data["id"])
+                    (new_name, new_type, new_opts, data["id"]),
                 )
                 self.db.conn.commit()
                 dlg.destroy()
                 self.load_list()
-                
+
                 # Reselect
                 for item in self.tree.get_children():
                     if self.checklist_map[item]["id"] == data["id"]:
                         self.tree.selection_set(item)
                         break
-                        
+
             except Exception as e:
                 messagebox.showerror("Error", f"Update failed: {e}", parent=dlg)
 
-        ttk.Button(main_frame, text="Save Changes", command=save_edit).pack(pady=10)
-
+        ttk.Button(main_frame, text="Save Changes", command=save_edit).pack(
+            pady=10
+        )
 
     def on_close(self):
         """Handles the dialog close event."""
@@ -766,9 +808,7 @@ class FlightDetailsDialog(tk.Toplevel):
 
         log_frame = ttk.LabelFrame(self, text="Flight Log File", padding=10)
         log_frame.pack(fill=tk.X, padx=10, pady=5)
-        filename = (
-            os.path.basename(self.log_path) if self.log_path else "None"
-        )
+        filename = os.path.basename(self.log_path) if self.log_path else "None"
         ttk.Label(log_frame, text=f"File: {filename}").pack(
             side=tk.LEFT, padx=5
         )

@@ -106,4 +106,3 @@ def compare_params(
     }
 
     return added, removed, changed
-
