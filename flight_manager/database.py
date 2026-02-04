@@ -377,6 +377,55 @@ class DatabaseManager:
         except Exception as e:
             raise e
 
+    def update_log(self, log_id: int, data: Dict[str, Any]) -> bool:
+        """Updates an existing flight log in the database.
+
+        Args:
+            log_id: The ID of the log to update.
+            data: A dictionary containing the updated log data.
+
+        Returns:
+            True if successful.
+
+        Raises:
+            Exception: If the update fails.
+        """
+        try:
+            query = """
+                UPDATE logs SET
+                    flight_no = :flight_no,
+                    date = :date,
+                    vehicle_name = :vehicle_name,
+                    mission_title = :mission_title,
+                    note = :note,
+                    system_check = :system_check,
+                    parameter_changes = :parameter_changes,
+                    log_file_path = :log_file_path
+                WHERE id = :id
+            """
+            data["id"] = log_id
+            self.conn.execute(query, data)
+            self.conn.commit()
+            return True
+        except Exception as e:
+            raise e
+
+    def delete_log(self, log_id: int) -> bool:
+        """Deletes a flight log from the database.
+
+        Args:
+            log_id: The ID of the log to delete.
+
+        Returns:
+            True if successful.
+        """
+        try:
+            self.conn.execute("DELETE FROM logs WHERE id = ?", (log_id,))
+            self.conn.commit()
+            return True
+        except Exception:
+            return False
+
     def get_logs(
         self,
         filter_id: Optional[str] = None,

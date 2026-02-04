@@ -23,6 +23,7 @@ from flight_manager.ui.dialogs import (
     ComparisonDialog,
     FlightDetailsDialog,
     IgnoreSettingsDialog,
+    LogEditDialog,
     VehicleSettingsDialog,
 )
 
@@ -166,6 +167,15 @@ class FlightManagerApp:
             label="Import Settings (JSON)", command=self.import_settings
         )
         menubar.add_cascade(label="Settings", menu=settings_menu)
+
+        # History Menu
+        history_menu = tk.Menu(menubar, tearoff=0)
+        history_menu.add_command(label="Refresh History", command=self.load_logs)
+        history_menu.add_command(label="Clear Filters", command=self.reset_filter)
+        history_menu.add_separator()
+        history_menu.add_command(label="Edit Selected Log", command=self.edit_selected_log)
+        history_menu.add_command(label="Delete Selected Log", command=self.delete_selected_log)
+        menubar.add_cascade(label="History", menu=history_menu)
 
         # Help Menu
         help_menu = tk.Menu(menubar, tearoff=0)
@@ -533,9 +543,44 @@ class FlightManagerApp:
         self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
         self.tree.bind("<Double-1>", self.on_history_double_click)
+        self.tree.bind("<Button-3>", self.show_context_menu)
 
         self.load_logs()
         self.refresh_vehicle_ui()
+
+    def show_context_menu(self, event: tk.Event):
+        """Shows a context menu on the treeview."""
+        item = self.tree.identify_row(event.y)
+        if item:
+            self.tree.selection_set(item)
+            menu = tk.Menu(self.root, tearoff=0)
+            menu.add_command(label="View Details", command=lambda: self.on_history_double_click(None))
+            menu.add_command(label="Edit", command=self.edit_selected_log)
+            menu.add_command(label="Delete", command=self.delete_selected_log)
+            menu.post(event.x_root, event.y_root)
+
+    def edit_selected_log(self):
+        """Opens the edit dialog for the selected log."""
+        item_id = self.tree.selection()
+        if not item_id:
+            return
+        vals = self.tree.item(item_id, "values")
+        log_id = int(vals[0])
+        LogEditDialog(self.root, self.db, log_id, on_save_callback=self.refresh_after_delete)
+
+    def delete_selected_log(self):
+        """Deletes the selected log after confirmation."""
+        item_id = self.tree.selection()
+        if not item_id:
+            return
+        vals = self.tree.item(item_id, "values")
+        log_id = int(vals[0])
+        
+        if messagebox.askyesno("Confirm Delete", "Are you sure you want to delete this flight log?"):
+            if self.db.delete_log(log_id):
+                self.refresh_after_delete()
+            else:
+                messagebox.showerror("Error", "Failed to delete log.")
 
     def reset_filter(self):
         """Resets the filter criteria to defaults."""
@@ -606,7 +651,18 @@ class FlightManagerApp:
         vals = self.tree.item(item_id, "values")
         log_id = int(vals[0])
 
-        FlightDetailsDialog(self.root, self.db, log_id)
+        FlightDetailsDialog(
+            self.root,
+            self.db,
+            log_id,
+            file_manager=self.file_manager,
+            on_update_callback=self.refresh_after_delete
+        )
+
+    def refresh_after_delete(self):
+        """Refreshes logs and resets the next flight ID."""
+        self.load_logs()
+        self.calculate_next_id()
 
     def open_ignore_settings(self):
         """Opens the Ignore Settings dialog."""

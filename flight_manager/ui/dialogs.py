@@ -534,7 +534,7 @@ class ChecklistSettingsDialog(BaseSettingsDialog):
             try:
                 cursor = self.db.conn.cursor()
                 cursor.execute(
-                    "UPDATE checklist_items SET name=?, type=?, options=? WHERE id=?",
+                    "UPDATE checklist_config SET item_name=?, item_type=?, options=? WHERE id=?",
                     (new_name, new_type, new_opts, data["id"]),
                 )
                 self.db.conn.commit()
@@ -553,6 +553,216 @@ class ChecklistSettingsDialog(BaseSettingsDialog):
         ttk.Button(main_frame, text="Save Changes", command=save_edit).pack(
             pady=10
         )
+
+
+class LogEditDialog(BaseSettingsDialog):
+    """Dialog for editing an existing flight log."""
+
+    def __init__(
+        self,
+        parent: tk.Widget,
+        db_manager: Any,
+        log_id: int,
+        on_save_callback: Optional[Callable[[], None]] = None,
+    ):
+        """Initializes the LogEditDialog.
+
+        Args:
+            parent: The parent widget.
+            db_manager: The database manager instance.
+            log_id: The ID of the log to edit.
+            on_save_callback: Optional callback when log is saved.
+        """
+        super().__init__(parent, "Edit Flight Log", "600x800")
+        self.db = db_manager
+        self.log_id = log_id
+        self.on_save_callback = on_save_callback
+
+        row = self.db.get_log_by_id(log_id)
+        if not row:
+            self.destroy()
+            return
+
+        (
+            self.flight_no,
+            self.date,
+            self.vehicle,
+            checks_json,
+            self.param_content,
+            self.log_path,
+            self.mission,
+            self.note,
+        ) = row
+
+        self.dynamic_widgets = {}
+        self.create_widgets(checks_json)
+
+    def create_widgets(self, checks_json: str):
+        """Creates the widgets for the dialog."""
+        main_frame = ttk.Frame(self, padding=10)
+        main_frame.pack(fill=tk.BOTH, expand=True)
+
+        # Basic Info
+        info_frame = ttk.LabelFrame(main_frame, text="Information", padding=10)
+        info_frame.pack(fill=tk.X, pady=5)
+
+        ttk.Label(info_frame, text="Date:").grid(row=0, column=0, sticky="w")
+        self.entry_date = ttk.Entry(info_frame)
+        self.entry_date.grid(row=0, column=1, sticky="ew", padx=5, pady=2)
+        self.entry_date.insert(0, self.date)
+
+        ttk.Label(info_frame, text="Vehicle:").grid(row=1, column=0, sticky="w")
+        vehicles = self.db.get_vehicles(include_archived=True)
+        vehicle_names = [v if isinstance(v, str) else v[0] for v in vehicles]
+        if self.vehicle not in vehicle_names:
+            vehicle_names.append(self.vehicle)
+
+        self.combo_vehicle = ttk.Combobox(
+            info_frame, values=vehicle_names, state="readonly"
+        )
+        self.combo_vehicle.grid(row=1, column=1, sticky="ew", padx=5, pady=2)
+        self.combo_vehicle.set(self.vehicle)
+
+        ttk.Label(info_frame, text="Flight ID:").grid(
+            row=2, column=0, sticky="w"
+        )
+        self.entry_flight_no = ttk.Entry(info_frame)
+        self.entry_flight_no.grid(row=2, column=1, sticky="ew", padx=5, pady=2)
+        self.entry_flight_no.insert(0, self.flight_no)
+
+        ttk.Label(info_frame, text="Mission:").grid(row=3, column=0, sticky="w")
+        self.entry_mission = ttk.Entry(info_frame)
+        self.entry_mission.grid(
+            row=3, column=1, columnspan=2, sticky="ew", padx=5, pady=2
+        )
+        self.entry_mission.insert(0, self.mission if self.mission else "")
+
+        info_frame.columnconfigure(1, weight=1)
+
+        # Checklist
+        check_frame = ttk.LabelFrame(
+            main_frame, text="Preflight Check", padding=10
+        )
+        check_frame.pack(fill=tk.BOTH, expand=True, pady=5)
+
+        canvas = tk.Canvas(check_frame, height=200)
+        scrollbar = ttk.Scrollbar(
+            check_frame, orient="vertical", command=canvas.yview
+        )
+        scroll_frame = ttk.Frame(canvas)
+        scroll_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all")),
+        )
+        canvas.create_window((0, 0), window=scroll_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+        checklist_data = []
+        try:
+            checklist_data = json.loads(checks_json)
+        except Exception:
+            pass
+
+        for item in checklist_data:
+            f = ttk.Frame(scroll_frame)
+            f.pack(fill=tk.X, pady=2, padx=5)
+
+            name = item.get("name", "??")
+            itype = item.get("type", "checkbox")
+            val = item.get("value", "")
+
+            if itype == "text":
+                ttk.Label(f, text=f"{name}:", width=25).pack(side=tk.LEFT)
+                e = ttk.Entry(f)
+                e.insert(0, str(val))
+                e.pack(side=tk.LEFT, fill=tk.X, expand=True)
+                self.dynamic_widgets[name] = {"type": "text", "var": e}
+            elif itype == "single_select":
+                ttk.Label(f, text=f"{name}:", width=25).pack(side=tk.LEFT)
+                e = ttk.Entry(f)
+                e.insert(0, str(val))
+                e.pack(side=tk.LEFT, fill=tk.X, expand=True)
+                self.dynamic_widgets[name] = {
+                    "type": "single_select",
+                    "var": e,
+                }
+            else:
+                is_checked = val is True or str(val).lower() == "true"
+                var = tk.BooleanVar(value=is_checked)
+                chk = ttk.Checkbutton(f, text=name, variable=var)
+                chk.pack(side=tk.LEFT)
+                self.dynamic_widgets[name] = {"type": "checkbox", "var": var}
+
+        # Note
+        note_frame = ttk.LabelFrame(main_frame, text="Note", padding=10)
+        note_frame.pack(fill=tk.X, pady=5)
+        self.text_note = scrolledtext.ScrolledText(
+            note_frame, height=5, font=("Segoe UI", 9)
+        )
+        self.text_note.insert(tk.END, self.note if self.note else "")
+        self.text_note.pack(fill=tk.BOTH, expand=True)
+
+        # Buttons
+        btn_frame = ttk.Frame(main_frame)
+        btn_frame.pack(pady=10)
+
+        ttk.Button(btn_frame, text="Save Changes", command=self.save_log).pack(
+            side=tk.LEFT, padx=5
+        )
+        ttk.Button(btn_frame, text="Cancel", command=self.destroy).pack(
+            side=tk.LEFT, padx=5
+        )
+
+    def save_log(self):
+        """Saves the edited log back to the database."""
+        flight_no = self.entry_flight_no.get().strip()
+        date = self.entry_date.get().strip()
+        vehicle = self.combo_vehicle.get().strip()
+        mission = self.entry_mission.get().strip()
+        note = self.text_note.get("1.0", tk.END).strip()
+
+        if not flight_no or not date or not vehicle:
+            messagebox.showwarning(
+                "Warning", "Flight ID, Date, and Vehicle are required."
+            )
+            return
+
+        # Prepare Checklist JSON
+        checklist_data = []
+        for name, data in self.dynamic_widgets.items():
+            item_type = data["type"]
+            val = None
+            if item_type == "checkbox":
+                val = data["var"].get()
+            else:
+                val = data["var"].get().strip()
+            checklist_data.append(
+                {"name": name, "type": item_type, "value": val}
+            )
+
+        system_check_json = json.dumps(checklist_data)
+
+        log_data = {
+            "flight_no": flight_no,
+            "date": date,
+            "vehicle_name": vehicle,
+            "mission_title": mission,
+            "note": note,
+            "system_check": system_check_json,
+            "parameter_changes": self.param_content,
+        }
+
+        try:
+            self.db.update_log(self.log_id, log_data)
+            messagebox.showinfo("Success", "Log updated successfully.")
+            if self.on_save_callback:
+                self.on_save_callback()
+            self.destroy()
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to update log: {e}")
+
 
     def on_close(self):
         """Handles the dialog close event."""
@@ -681,17 +891,21 @@ class ComparisonDialog(tk.Toplevel):
 class FlightDetailsDialog(tk.Toplevel):
     """Dialog for viewing flight details."""
 
-    def __init__(self, parent: tk.Widget, db_manager: Any, log_id: int):
+    def __init__(self, parent: tk.Widget, db_manager: Any, log_id: int, file_manager: Any = None, on_update_callback: Optional[Callable[[], None]] = None):
         """Initializes the FlightDetailsDialog.
 
         Args:
             parent: The parent widget.
             db_manager: The database manager instance.
             log_id: The ID of the flight log.
+            file_manager: The file manager instance.
+            on_update_callback: Optional callback when log is updated or deleted.
         """
         super().__init__(parent)
         self.db = db_manager
+        self.file_manager = file_manager
         self.log_id = log_id
+        self.on_update_callback = on_update_callback
 
         row = self.db.get_log_by_id(log_id)
         if not row:
@@ -715,6 +929,13 @@ class FlightDetailsDialog(tk.Toplevel):
 
     def create_widgets(self, checks_json: str):
         """Creates the widgets for the dialog."""
+        # Top Action Buttons
+        action_frame = ttk.Frame(self, padding=10)
+        action_frame.pack(fill=tk.X)
+        
+        ttk.Button(action_frame, text="Edit Log Info", command=self.edit_log).pack(side=tk.LEFT, padx=5)
+        ttk.Button(action_frame, text="Delete Log", command=self.delete_log).pack(side=tk.LEFT, padx=5)
+
         info_frame = ttk.LabelFrame(self, text="Information", padding=10)
         info_frame.pack(fill=tk.X, padx=10, pady=5)
         ttk.Label(info_frame, text=f"Date: {self.date}").grid(
@@ -803,20 +1024,25 @@ class FlightDetailsDialog(tk.Toplevel):
             param_frame, text="Compare...", command=self.open_compare
         ).pack(side=tk.LEFT, padx=5)
         ttk.Button(
+            param_frame, text="Update Params...", command=self.update_params
+        ).pack(side=tk.LEFT, padx=5)
+        ttk.Button(
             param_frame, text="Export Params", command=self.export_params
         ).pack(side=tk.LEFT, padx=5)
 
         log_frame = ttk.LabelFrame(self, text="Flight Log File", padding=10)
         log_frame.pack(fill=tk.X, padx=10, pady=5)
-        filename = os.path.basename(self.log_path) if self.log_path else "None"
-        ttk.Label(log_frame, text=f"File: {filename}").pack(
-            side=tk.LEFT, padx=5
-        )
+        self.lbl_log_file = ttk.Label(log_frame, text=f"File: {os.path.basename(self.log_path) if self.log_path else 'None'}")
+        self.lbl_log_file.pack(side=tk.LEFT, padx=5)
 
         if self.log_path:
             ttk.Button(
                 log_frame, text="Export Log", command=self.export_log
             ).pack(side=tk.RIGHT, padx=5)
+        
+        ttk.Button(
+            log_frame, text="Update Log File...", command=self.update_log_file
+        ).pack(side=tk.RIGHT, padx=5)
 
     def open_compare(self):
         """Opens the comparison dialog for this flight."""
@@ -827,6 +1053,99 @@ class FlightDetailsDialog(tk.Toplevel):
             self.param_content,
             exclude_id=self.log_id,
         )
+
+    def update_params(self):
+        """Updates the parameter content from a new file."""
+        filename = filedialog.askopenfilename(title="Select New Parameter File")
+        if filename:
+            try:
+                with open(filename, "r") as f:
+                    new_content = f.read()
+                
+                # Get current log data to update
+                row = self.db.get_log_by_id(self.log_id)
+                if not row: return
+                
+                log_data = {
+                    "flight_no": row[0],
+                    "date": row[1],
+                    "vehicle_name": row[2],
+                    "system_check": row[3],
+                    "parameter_changes": new_content,
+                    "log_file_path": row[5],
+                    "mission_title": row[6],
+                    "note": row[7]
+                }
+                
+                self.db.update_log(self.log_id, log_data)
+                self.param_content = new_content
+                messagebox.showinfo("Success", "Parameter data updated.")
+                if self.on_update_callback:
+                    self.on_update_callback()
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to update parameters: {e}")
+
+    def update_log_file(self):
+        """Updates the log file from a new source."""
+        filename = filedialog.askopenfilename(title="Select New Flight Log File")
+        if filename:
+            try:
+                if not self.file_manager:
+                    messagebox.showerror("Error", "File manager not available.")
+                    return
+                
+                new_path = self.file_manager.save_log_file(
+                    filename, self.date, self.vehicle, self.flight_no
+                )
+                
+                # Get current log data to update
+                row = self.db.get_log_by_id(self.log_id)
+                if not row: return
+                
+                log_data = {
+                    "flight_no": row[0],
+                    "date": row[1],
+                    "vehicle_name": row[2],
+                    "system_check": row[3],
+                    "parameter_changes": row[4],
+                    "log_file_path": new_path,
+                    "mission_title": row[6],
+                    "note": row[7]
+                }
+                
+                self.db.update_log(self.log_id, log_data)
+                self.log_path = new_path
+                self.lbl_log_file.config(text=f"File: {os.path.basename(new_path)}")
+                messagebox.showinfo("Success", "Flight log file updated.")
+                if self.on_update_callback:
+                    self.on_update_callback()
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to update log file: {e}")
+
+    def edit_log(self):
+        """Opens the edit dialog for this flight."""
+        def refresh_and_close():
+            if self.on_update_callback:
+                self.on_update_callback()
+            # Reload data in this dialog too if we don't close it
+            row = self.db.get_log_by_id(self.log_id)
+            if row:
+                self.flight_no, self.date, self.vehicle, _, self.param_content, self.log_path, self.mission, self.note = row
+                # We close it for simplicity as per previous implementation to ensure consistency
+                self.destroy()
+
+        LogEditDialog(self, self.db, self.log_id, on_save_callback=refresh_and_close)
+
+    def delete_log(self):
+        """Deletes this flight log after confirmation."""
+        if messagebox.askyesno("Confirm Delete", "Are you sure you want to delete this flight log? This action cannot be undone."):
+            if self.db.delete_log(self.log_id):
+                messagebox.showinfo("Deleted", "Flight log has been deleted.")
+                if self.on_update_callback:
+                    self.on_update_callback()
+                self.destroy()
+            else:
+                messagebox.showerror("Error", "Failed to delete flight log.")
 
     def export_params(self):
         """Exports the parameter data to a text file."""
