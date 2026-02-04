@@ -101,12 +101,41 @@ class DatabaseManager:
         """
         )
 
+        # Settings table
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT
+            )
+        """
+        )
+
         self.conn.commit()
         self.seed_defaults()
 
     def seed_defaults(self):
         """Seeds the database with default values if tables are empty."""
         cursor = self.conn.cursor()
+
+        # Default Font Size
+        cursor.execute("SELECT COUNT(*) FROM settings WHERE key = 'font_size'")
+        if cursor.fetchone()[0] == 0:
+            cursor.execute(
+                "INSERT INTO settings (key, value) VALUES (?, ?)", ("font_size", "10")
+            )
+        
+        # Default Feature Settings
+        feature_defaults = [
+            ("enable_edit_log", "1"),
+            ("enable_delete_log", "1"),
+            ("enable_update_params", "1"),
+            ("enable_update_log_file", "1"),
+        ]
+        for key, val in feature_defaults:
+            cursor.execute("SELECT COUNT(*) FROM settings WHERE key = ?", (key,))
+            if cursor.fetchone()[0] == 0:
+                cursor.execute("INSERT INTO settings (key, value) VALUES (?, ?)", (key, val))
 
         # Default Vehicle
         cursor.execute("SELECT COUNT(*) FROM vehicles")
@@ -322,6 +351,35 @@ class DatabaseManager:
         """
         self.conn.execute(
             "DELETE FROM ignore_patterns WHERE pattern = ?", (pattern,)
+        )
+        self.conn.commit()
+
+    # --- Settings ---
+    def get_setting(self, key: str, default: Any = None) -> Any:
+        """Retrieves a setting value.
+
+        Args:
+            key: The setting key.
+            default: The default value if the key is not found.
+
+        Returns:
+            The setting value.
+        """
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT value FROM settings WHERE key = ?", (key,))
+        res = cursor.fetchone()
+        return res[0] if res else default
+
+    def set_setting(self, key: str, value: Any):
+        """Sets a setting value.
+
+        Args:
+            key: The setting key.
+            value: The setting value.
+        """
+        self.conn.execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+            (key, str(value)),
         )
         self.conn.commit()
 

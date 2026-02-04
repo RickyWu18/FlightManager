@@ -24,6 +24,7 @@ from flight_manager.ui.dialogs import (
     FlightDetailsDialog,
     IgnoreSettingsDialog,
     LogEditDialog,
+    PreferencesDialog,
     VehicleSettingsDialog,
 )
 
@@ -72,6 +73,10 @@ class FlightManagerApp:
         # Database Setup
         self.db = DatabaseManager()
         self.file_manager = FileManager()
+
+        # Apply Global Font Size
+        self.initial_font_size = int(self.db.get_setting("font_size", 10))
+        self.apply_font_size(self.initial_font_size)
 
         # State for Sorting/Filtering
         self.sort_col = "flight_no"
@@ -122,6 +127,54 @@ class FlightManagerApp:
             # If current date is invalid, reset to today
             self.filter_date.set(datetime.date.today().strftime("%Y-%m-%d"))
 
+    def apply_font_size(self, size: int):
+        """Applies a global font size to the application.
+
+        Args:
+            size: The font size to apply.
+        """
+        from tkinter import font
+
+        # Update default fonts
+        for font_name in (
+            "TkDefaultFont",
+            "TkTextFont",
+            "TkMenuFont",
+            "TkHeadingFont",
+        ):
+            f = font.nametofont(font_name)
+            f.configure(size=size)
+
+        # Update TTK Styles
+        style = ttk.Style()
+        style.configure(".", font=("Segoe UI", size))
+        style.configure("Treeview.Heading", font=("Segoe UI", size, "bold"))
+        
+        # Helper to update non-TTK widgets like ScrolledText
+        def update_widget_fonts(parent):
+            for child in parent.winfo_children():
+                if isinstance(child, scrolledtext.ScrolledText):
+                    # Check if it's using Consolas (for comparison) or Segoe UI
+                    current_font = child.cget("font")
+                    if "Consolas" in str(current_font):
+                        child.configure(font=("Consolas", size))
+                        # Also update tags in ComparisonDialog if it's that one
+                        try:
+                            child.tag_config("head", font=("Consolas", size, "bold"))
+                        except Exception:
+                            pass
+                    else:
+                        child.configure(font=("Segoe UI", size))
+                update_widget_fonts(child)
+
+        update_widget_fonts(self.root)
+
+    def open_preferences(self):
+        """Opens the Preferences dialog."""
+        PreferencesDialog(
+            self.root, self.db, on_save_callback=self.apply_font_size
+        )
+
     def pick_date(self, var: tk.StringVar, widget: tk.Widget = None):
         """Opens a calendar dialog to pick a date.
 
@@ -150,6 +203,11 @@ class FlightManagerApp:
         # Settings Menu
         settings_menu = tk.Menu(menubar, tearoff=0)
         settings_menu.add_command(
+            label="Preferences (Performance & UI)",
+            command=self.open_preferences,
+        )
+        settings_menu.add_separator()
+        settings_menu.add_command(
             label="Manage Preflight Checklist",
             command=self.open_checklist_settings,
         )
@@ -173,8 +231,15 @@ class FlightManagerApp:
         history_menu.add_command(label="Refresh History", command=self.load_logs)
         history_menu.add_command(label="Clear Filters", command=self.reset_filter)
         history_menu.add_separator()
+        
         history_menu.add_command(label="Edit Selected Log", command=self.edit_selected_log)
+        if self.db.get_setting("enable_edit_log", "1") == "0":
+            history_menu.entryconfig("Edit Selected Log", state="disabled")
+            
         history_menu.add_command(label="Delete Selected Log", command=self.delete_selected_log)
+        if self.db.get_setting("enable_delete_log", "1") == "0":
+            history_menu.entryconfig("Delete Selected Log", state="disabled")
+            
         menubar.add_cascade(label="History", menu=history_menu)
 
         # Help Menu
@@ -374,8 +439,10 @@ class FlightManagerApp:
         ttk.Label(self.input_frame, text="Note:").grid(
             row=7, column=0, sticky="nw", pady=5
         )
+        
+        font_size = int(self.db.get_setting("font_size", 10))
         self.text_note = scrolledtext.ScrolledText(
-            self.input_frame, height=4, width=40, font=("Segoe UI", 9)
+            self.input_frame, height=4, width=40, font=("Segoe UI", font_size)
         )
         self.text_note.grid(
             row=7, column=1, columnspan=2, sticky="nsew", pady=5
@@ -555,8 +622,17 @@ class FlightManagerApp:
             self.tree.selection_set(item)
             menu = tk.Menu(self.root, tearoff=0)
             menu.add_command(label="View Details", command=lambda: self.on_history_double_click(None))
+            
+            # Edit
             menu.add_command(label="Edit", command=self.edit_selected_log)
+            if self.db.get_setting("enable_edit_log", "1") == "0":
+                menu.entryconfig("Edit", state="disabled")
+                
+            # Delete
             menu.add_command(label="Delete", command=self.delete_selected_log)
+            if self.db.get_setting("enable_delete_log", "1") == "0":
+                menu.entryconfig("Delete", state="disabled")
+                
             menu.post(event.x_root, event.y_root)
 
     def edit_selected_log(self):

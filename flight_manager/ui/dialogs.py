@@ -53,6 +53,85 @@ class BaseSettingsDialog(tk.Toplevel):
         self.grab_set()
 
 
+class PreferencesDialog(BaseSettingsDialog):
+    """Dialog for managing application preferences (Performance/UI)."""
+
+    def __init__(
+        self,
+        parent: tk.Widget,
+        db_manager: Any,
+        on_save_callback: Optional[Callable[[int], None]] = None,
+    ):
+        """Initializes the PreferencesDialog.
+
+        Args:
+            parent: The parent widget.
+            db_manager: The database manager instance.
+            on_save_callback: Optional callback when settings are saved.
+        """
+        super().__init__(parent, "Performance & UI Settings", "400x500")
+        self.db = db_manager
+        self.on_save_callback = on_save_callback
+
+        content_frame = ttk.Frame(self, padding=20)
+        content_frame.pack(fill=tk.BOTH, expand=True)
+
+        # Font Size
+        ttk.Label(content_frame, text="Global Font Size:", font=("Segoe UI", 11)).pack(anchor="w", pady=(0, 5))
+        
+        current_size = int(self.db.get_setting("font_size", 10))
+        self.size_var = tk.IntVar(value=current_size)
+        self.spin = ttk.Spinbox(content_frame, from_=8, to_=24, textvariable=self.size_var, width=10, font=("Segoe UI", 11))
+        self.spin.pack(anchor="w", pady=(0, 10))
+
+        ttk.Separator(content_frame, orient="horizontal").pack(fill=tk.X, pady=10)
+
+        # Feature Permissions
+        ttk.Label(content_frame, text="Feature Permissions:", font=("Segoe UI", 11, "bold")).pack(anchor="w", pady=(0, 5))
+        
+        self.vars = {}
+        features = [
+            ("enable_edit_log", "Enable Edit Log Info"),
+            ("enable_delete_log", "Enable Delete Log"),
+            ("enable_update_params", "Enable Update Parameters"),
+            ("enable_update_log_file", "Enable Update Log File"),
+        ]
+
+        for key, label in features:
+            var = tk.BooleanVar(value=self.db.get_setting(key, "1") == "1")
+            chk = ttk.Checkbutton(content_frame, text=label, variable=var)
+            chk.pack(anchor="w", pady=2)
+            self.vars[key] = var
+
+        btn_frame = ttk.Frame(content_frame)
+        btn_frame.pack(fill=tk.X, pady=20)
+
+        ttk.Button(btn_frame, text="Save", command=self.save_settings).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="Apply", command=self.apply_settings).pack(side=tk.LEFT, padx=5)
+        
+        ttk.Label(content_frame, text="Note: Some changes may require app restart for full effect.", font=("Segoe UI", 8), foreground="gray").pack(pady=10)
+
+    def apply_settings(self):
+        """Applies the current settings via callback without saving to DB."""
+        new_size = self.size_var.get()
+        if self.on_save_callback:
+            self.on_save_callback(new_size)
+
+    def save_settings(self):
+        """Saves the settings to the database and triggers callback."""
+        new_size = self.size_var.get()
+        self.db.set_setting("font_size", new_size)
+        
+        for key, var in self.vars.items():
+            self.db.set_setting(key, "1" if var.get() else "0")
+        
+        if self.on_save_callback:
+            self.on_save_callback(new_size)
+        
+        messagebox.showinfo("Success", "Settings saved successfully.")
+        self.destroy()
+
+
 class IgnoreSettingsDialog(BaseSettingsDialog):
     """Dialog for managing ignore patterns."""
 
@@ -698,8 +777,10 @@ class LogEditDialog(BaseSettingsDialog):
         # Note
         note_frame = ttk.LabelFrame(main_frame, text="Note", padding=10)
         note_frame.pack(fill=tk.X, pady=5)
+        
+        font_size = int(self.db.get_setting("font_size", 10))
         self.text_note = scrolledtext.ScrolledText(
-            note_frame, height=5, font=("Segoe UI", 9)
+            note_frame, height=5, font=("Segoe UI", font_size)
         )
         self.text_note.insert(tk.END, self.note if self.note else "")
         self.text_note.pack(fill=tk.BOTH, expand=True)
@@ -813,12 +894,13 @@ class ComparisonDialog(tk.Toplevel):
         self.combo.pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
         self.combo.bind("<<ComboboxSelected>>", self.update_view)
 
-        self.st = scrolledtext.ScrolledText(self, font=("Consolas", 10))
+        font_size = int(self.db.get_setting("font_size", 10))
+        self.st = scrolledtext.ScrolledText(self, font=("Consolas", font_size))
         self.st.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
         self.st.tag_config("add", foreground="green")
         self.st.tag_config("rem", foreground="red")
         self.st.tag_config("chg", foreground="darkorange")
-        self.st.tag_config("head", font=("Consolas", 10, "bold"))
+        self.st.tag_config("head", font=("Consolas", font_size, "bold"))
 
     def load_history(self):
         """Loads parameter history for the vehicle."""
@@ -933,8 +1015,15 @@ class FlightDetailsDialog(tk.Toplevel):
         action_frame = ttk.Frame(self, padding=10)
         action_frame.pack(fill=tk.X)
         
-        ttk.Button(action_frame, text="Edit Log Info", command=self.edit_log).pack(side=tk.LEFT, padx=5)
-        ttk.Button(action_frame, text="Delete Log", command=self.delete_log).pack(side=tk.LEFT, padx=5)
+        edit_btn = ttk.Button(action_frame, text="Edit Log Info", command=self.edit_log)
+        edit_btn.pack(side=tk.LEFT, padx=5)
+        if self.db.get_setting("enable_edit_log", "1") == "0":
+            edit_btn.state(["disabled"])
+
+        del_btn = ttk.Button(action_frame, text="Delete Log", command=self.delete_log)
+        del_btn.pack(side=tk.LEFT, padx=5)
+        if self.db.get_setting("enable_delete_log", "1") == "0":
+            del_btn.state(["disabled"])
 
         info_frame = ttk.LabelFrame(self, text="Information", padding=10)
         info_frame.pack(fill=tk.X, padx=10, pady=5)
@@ -955,8 +1044,10 @@ class FlightDetailsDialog(tk.Toplevel):
         if self.note:
             note_frame = ttk.LabelFrame(self, text="Note", padding=10)
             note_frame.pack(fill=tk.X, padx=10, pady=5)
+            
+            font_size = int(self.db.get_setting("font_size", 10))
             st = scrolledtext.ScrolledText(
-                note_frame, height=3, font=("Segoe UI", 9)
+                note_frame, height=3, font=("Segoe UI", font_size)
             )
             st.insert(tk.END, self.note)
             st.config(state="disabled")
@@ -1023,9 +1114,18 @@ class FlightDetailsDialog(tk.Toplevel):
         ttk.Button(
             param_frame, text="Compare...", command=self.open_compare
         ).pack(side=tk.LEFT, padx=5)
-        ttk.Button(
-            param_frame, text="Update Params...", command=self.update_params
-        ).pack(side=tk.LEFT, padx=5)
+        
+        is_param_none = not self.param_content or not self.param_content.strip()
+        param_btn_text = "Upload Params..." if is_param_none else "Update Params..."
+        upd_param_btn = ttk.Button(
+            param_frame, text=param_btn_text, command=self.update_params
+        )
+        upd_param_btn.pack(side=tk.LEFT, padx=5)
+        
+        # Enable if setting is on OR if it's a first-time upload
+        if self.db.get_setting("enable_update_params", "1") == "0" and not is_param_none:
+            upd_param_btn.state(["disabled"])
+
         ttk.Button(
             param_frame, text="Export Params", command=self.export_params
         ).pack(side=tk.LEFT, padx=5)
@@ -1040,9 +1140,16 @@ class FlightDetailsDialog(tk.Toplevel):
                 log_frame, text="Export Log", command=self.export_log
             ).pack(side=tk.RIGHT, padx=5)
         
-        ttk.Button(
-            log_frame, text="Update Log File...", command=self.update_log_file
-        ).pack(side=tk.RIGHT, padx=5)
+        is_none = not self.log_path
+        btn_text = "Upload Log File..." if is_none else "Update Log File..."
+        upd_log_btn = ttk.Button(
+            log_frame, text=btn_text, command=self.update_log_file
+        )
+        upd_log_btn.pack(side=tk.RIGHT, padx=5)
+        
+        # Enable if setting is on OR if it's a first-time upload (is_none)
+        if self.db.get_setting("enable_update_log_file", "1") == "0" and not is_none:
+            upd_log_btn.state(["disabled"])
 
     def open_compare(self):
         """Opens the comparison dialog for this flight."""
