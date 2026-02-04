@@ -101,12 +101,41 @@ class DatabaseManager:
         """
         )
 
+        # Settings table
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT
+            )
+        """
+        )
+
         self.conn.commit()
         self.seed_defaults()
 
     def seed_defaults(self):
         """Seeds the database with default values if tables are empty."""
         cursor = self.conn.cursor()
+
+        # Default Font Size
+        cursor.execute("SELECT COUNT(*) FROM settings WHERE key = 'font_size'")
+        if cursor.fetchone()[0] == 0:
+            cursor.execute(
+                "INSERT INTO settings (key, value) VALUES (?, ?)", ("font_size", "10")
+            )
+        
+        # Default Feature Settings
+        feature_defaults = [
+            ("enable_edit_log", "1"),
+            ("enable_delete_log", "1"),
+            ("enable_update_params", "1"),
+            ("enable_update_log_file", "1"),
+        ]
+        for key, val in feature_defaults:
+            cursor.execute("SELECT COUNT(*) FROM settings WHERE key = ?", (key,))
+            if cursor.fetchone()[0] == 0:
+                cursor.execute("INSERT INTO settings (key, value) VALUES (?, ?)", (key, val))
 
         # Default Vehicle
         cursor.execute("SELECT COUNT(*) FROM vehicles")
@@ -325,6 +354,35 @@ class DatabaseManager:
         )
         self.conn.commit()
 
+    # --- Settings ---
+    def get_setting(self, key: str, default: Any = None) -> Any:
+        """Retrieves a setting value.
+
+        Args:
+            key: The setting key.
+            default: The default value if the key is not found.
+
+        Returns:
+            The setting value.
+        """
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT value FROM settings WHERE key = ?", (key,))
+        res = cursor.fetchone()
+        return res[0] if res else default
+
+    def set_setting(self, key: str, value: Any):
+        """Sets a setting value.
+
+        Args:
+            key: The setting key.
+            value: The setting value.
+        """
+        self.conn.execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+            (key, str(value)),
+        )
+        self.conn.commit()
+
     # --- Logs ---
     def get_next_flight_id(self, date_str: str) -> int:
         """Calculates the next flight ID for a given date.
@@ -376,6 +434,55 @@ class DatabaseManager:
             return True
         except Exception as e:
             raise e
+
+    def update_log(self, log_id: int, data: Dict[str, Any]) -> bool:
+        """Updates an existing flight log in the database.
+
+        Args:
+            log_id: The ID of the log to update.
+            data: A dictionary containing the updated log data.
+
+        Returns:
+            True if successful.
+
+        Raises:
+            Exception: If the update fails.
+        """
+        try:
+            query = """
+                UPDATE logs SET
+                    flight_no = :flight_no,
+                    date = :date,
+                    vehicle_name = :vehicle_name,
+                    mission_title = :mission_title,
+                    note = :note,
+                    system_check = :system_check,
+                    parameter_changes = :parameter_changes,
+                    log_file_path = :log_file_path
+                WHERE id = :id
+            """
+            data["id"] = log_id
+            self.conn.execute(query, data)
+            self.conn.commit()
+            return True
+        except Exception as e:
+            raise e
+
+    def delete_log(self, log_id: int) -> bool:
+        """Deletes a flight log from the database.
+
+        Args:
+            log_id: The ID of the log to delete.
+
+        Returns:
+            True if successful.
+        """
+        try:
+            self.conn.execute("DELETE FROM logs WHERE id = ?", (log_id,))
+            self.conn.commit()
+            return True
+        except Exception:
+            return False
 
     def get_logs(
         self,
