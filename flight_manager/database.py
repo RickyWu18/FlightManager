@@ -20,11 +20,27 @@ class DatabaseManager:
         self.conn = sqlite3.connect(db_name, check_same_thread=False)
         self.create_tables()
 
+    def _column_exists(self, table: str, column: str) -> bool:
+        """Checks if a column exists in a table using PRAGMA.
+        
+        Args:
+            table: Table name.
+            column: Column name.
+            
+        Returns:
+            True if column exists, False otherwise.
+        """
+        cursor = self.conn.cursor()
+        # PRAGMA table_info returns (cid, name, type, notnull, dflt_value, pk)
+        cursor.execute(f"PRAGMA table_info({table})")
+        columns = [row[1] for row in cursor.fetchall()]
+        return column in columns
+
     def create_tables(self):
-        """Creates necessary tables and applies migrations if they don't exist."""
+        """Creates necessary tables and applies migrations safely."""
         cursor = self.conn.cursor()
 
-        # Main logs table
+        # 1. Main logs table (Base Schema)
         cursor.execute(
             """
             CREATE TABLE IF NOT EXISTS logs (
@@ -42,20 +58,19 @@ class DatabaseManager:
         """
         )
 
-        # Migrations (idempotent)
-        migrations = [
-            "ALTER TABLE logs ADD COLUMN vehicle_name TEXT",
-            "ALTER TABLE logs ADD COLUMN log_file_path TEXT",
-            "ALTER TABLE logs ADD COLUMN mission_title TEXT",
-            "ALTER TABLE logs ADD COLUMN note TEXT",
+        # 2. Migrations for 'logs' table
+        # We check existence to avoid OperationalError or duplicate columns
+        logs_cols = [
+            ("vehicle_name", "TEXT"),
+            ("log_file_path", "TEXT"),
+            ("mission_title", "TEXT"),
+            ("note", "TEXT")
         ]
-        for mig in migrations:
-            try:
-                cursor.execute(mig)
-            except sqlite3.OperationalError:
-                pass
+        for col_name, col_type in logs_cols:
+            if not self._column_exists("logs", col_name):
+                cursor.execute(f"ALTER TABLE logs ADD COLUMN {col_name} {col_type}")
 
-        # Checklist configuration table
+        # 3. Checklist configuration table
         cursor.execute(
             """
             CREATE TABLE IF NOT EXISTS checklist_config (
@@ -68,20 +83,17 @@ class DatabaseManager:
             )
         """
         )
-        try:
-            cursor.execute(
-                "ALTER TABLE checklist_config ADD COLUMN order_index INTEGER DEFAULT 0"
-            )
-        except sqlite3.OperationalError:
-            pass
-        try:
-            cursor.execute(
-                "ALTER TABLE checklist_config ADD COLUMN validation_rule TEXT"
-            )
-        except sqlite3.OperationalError:
-            pass
+        
+        # Migrations for 'checklist_config'
+        checklist_cols = [
+            ("order_index", "INTEGER DEFAULT 0"),
+            ("validation_rule", "TEXT")
+        ]
+        for col_name, col_def in checklist_cols:
+            if not self._column_exists("checklist_config", col_name):
+                cursor.execute(f"ALTER TABLE checklist_config ADD COLUMN {col_name} {col_def}")
 
-        # Vehicles table
+        # 4. Vehicles table
         cursor.execute(
             """
             CREATE TABLE IF NOT EXISTS vehicles (
@@ -91,14 +103,12 @@ class DatabaseManager:
             )
         """
         )
-        try:
-            cursor.execute(
-                "ALTER TABLE vehicles ADD COLUMN is_archived INTEGER DEFAULT 0"
-            )
-        except sqlite3.OperationalError:
-            pass
+        
+        # Migrations for 'vehicles'
+        if not self._column_exists("vehicles", "is_archived"):
+            cursor.execute("ALTER TABLE vehicles ADD COLUMN is_archived INTEGER DEFAULT 0")
 
-        # Ignore Patterns table
+        # 5. Ignore Patterns table
         cursor.execute(
             """
             CREATE TABLE IF NOT EXISTS ignore_patterns (
@@ -108,7 +118,7 @@ class DatabaseManager:
         """
         )
 
-        # Settings table
+        # 6. Settings table
         cursor.execute(
             """
             CREATE TABLE IF NOT EXISTS settings (

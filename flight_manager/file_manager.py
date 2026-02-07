@@ -6,6 +6,7 @@ and managing directory structures.
 
 import os
 import shutil
+import re
 
 
 class FileManager:
@@ -41,10 +42,19 @@ class FileManager:
 
         os.makedirs(self.base_dir, exist_ok=True)
 
-        # Sanitize vehicle name for filename
-        safe_vehicle = vehicle_name.replace(" ", "_").replace("/", "-")
-        filename = os.path.basename(source_path)
-        new_filename = f"{date_str}_{safe_vehicle}_{flight_id}_{filename}"
+        # Sanitize filename components (Robust)
+        # Replace Windows/Unix reserved chars: < > : " / \ | ? *
+        # Also handle control characters if any
+        invalid_chars = r'[<>:"/\\|?*\x00-\x1f]'
+        
+        safe_vehicle = re.sub(invalid_chars, "_", vehicle_name).strip()
+        safe_date = re.sub(invalid_chars, "_", date_str).strip()
+        safe_id = re.sub(invalid_chars, "_", str(flight_id)).strip()
+        
+        orig_filename = os.path.basename(source_path)
+        safe_orig = re.sub(invalid_chars, "_", orig_filename)
+        
+        new_filename = f"{safe_date}_{safe_vehicle}_{safe_id}_{safe_orig}"
 
         dest_path = os.path.join(self.base_dir, new_filename)
         shutil.copy2(source_path, dest_path)

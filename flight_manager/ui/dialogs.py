@@ -52,6 +52,43 @@ class BaseSettingsDialog(tk.Toplevel):
         self.transient(parent)
         self.grab_set()
 
+    def _create_scrolled_list(self, parent, list_height=10):
+        """Creates a Frame containing a Listbox, Scrollbar, and Sidebar Button Frame."""
+        container = ttk.Frame(parent)
+        container.pack(fill=tk.BOTH, expand=True)
+
+        lb = tk.Listbox(container, height=list_height, font=("Segoe UI", 11))
+        sb = ttk.Scrollbar(container, orient="vertical", command=lb.yview)
+        lb.configure(yscrollcommand=sb.set)
+
+        lb.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        sb.pack(side=tk.LEFT, fill=tk.Y)
+
+        btn_frame = ttk.Frame(container, padding=(10, 0))
+        btn_frame.pack(side=tk.RIGHT, fill=tk.Y)
+
+        return lb, btn_frame
+
+    def _create_scrolled_tree(self, parent, columns, headings):
+        """Creates a Frame containing a Treeview, Scrollbar, and Sidebar Button Frame."""
+        container = ttk.Frame(parent)
+        container.pack(fill=tk.BOTH, expand=True)
+
+        tree = ttk.Treeview(container, columns=columns, show="headings", selectmode="browse")
+        for col, head in zip(columns, headings):
+            tree.heading(col, text=head)
+
+        sb = ttk.Scrollbar(container, orient="vertical", command=tree.yview)
+        tree.configure(yscroll=sb.set)
+
+        tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        sb.pack(side=tk.RIGHT, fill=tk.Y)
+
+        btn_frame = ttk.Frame(container, padding=(10, 0))
+        btn_frame.pack(side=tk.RIGHT, fill=tk.Y)
+
+        return tree, btn_frame
+
 
 class PreferencesDialog(BaseSettingsDialog):
     """Dialog for managing application preferences (Performance/UI)."""
@@ -78,7 +115,7 @@ class PreferencesDialog(BaseSettingsDialog):
 
         # Font Size
         ttk.Label(content_frame, text="Global Font Size:", font=("Segoe UI", 11)).pack(anchor="w", pady=(0, 5))
-        
+
         current_size = int(self.db.get_setting("font_size", 10))
         self.size_var = tk.IntVar(value=current_size)
         self.spin = ttk.Spinbox(content_frame, from_=8, to_=24, textvariable=self.size_var, width=10, font=("Segoe UI", 11))
@@ -88,7 +125,7 @@ class PreferencesDialog(BaseSettingsDialog):
 
         # Feature Permissions
         ttk.Label(content_frame, text="Feature Permissions:", font=("Segoe UI", 11, "bold")).pack(anchor="w", pady=(0, 5))
-        
+
         self.vars = {}
         features = [
             ("enable_edit_log", "Enable Edit Log Info"),
@@ -108,7 +145,7 @@ class PreferencesDialog(BaseSettingsDialog):
 
         ttk.Button(btn_frame, text="Save", command=self.save_settings).pack(side=tk.LEFT, padx=5)
         ttk.Button(btn_frame, text="Apply", command=self.apply_settings).pack(side=tk.LEFT, padx=5)
-        
+
         ttk.Label(content_frame, text="Note: Some changes may require app restart for full effect.", font=("Segoe UI", 8), foreground="gray").pack(pady=10)
 
     def apply_settings(self):
@@ -121,13 +158,13 @@ class PreferencesDialog(BaseSettingsDialog):
         """Saves the settings to the database and triggers callback."""
         new_size = self.size_var.get()
         self.db.set_setting("font_size", new_size)
-        
+
         for key, var in self.vars.items():
             self.db.set_setting(key, "1" if var.get() else "0")
-        
+
         if self.on_save_callback:
             self.on_save_callback(new_size)
-        
+
         messagebox.showinfo("Success", "Settings saved successfully.")
         self.destroy()
 
@@ -153,29 +190,11 @@ class IgnoreSettingsDialog(BaseSettingsDialog):
         ).pack(anchor="w", pady=(0, 5))
 
         # --- Top Section: List + Right Actions ---
-        list_frame = ttk.Frame(content_frame)
-        list_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 15))
+        self.lb, side_btn_frame = self._create_scrolled_list(content_frame)
 
-        # Listbox (Left)
-        self.lb = tk.Listbox(list_frame, height=10, font=("Segoe UI", 11))
-        scrollbar = ttk.Scrollbar(
-            list_frame, orient="vertical", command=self.lb.yview
+        ttk.Button( side_btn_frame, text="Delete", command=self.delete_item).pack(
+            fill=tk.X, pady=2
         )
-        self.lb.configure(yscrollcommand=scrollbar.set)
-
-        self.lb.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        scrollbar.pack(side=tk.LEFT, fill=tk.Y)
-
-        # Side Buttons (Right)
-        side_btn_frame = ttk.Frame(list_frame, padding=(10, 0))
-        side_btn_frame.pack(side=tk.RIGHT, fill=tk.Y)
-
-        ttk.Button(
-            side_btn_frame,
-            text="Delete Selected",
-            command=self.delete_item,
-            width=15,
-        ).pack(fill=tk.X, pady=2)
 
         self.load_list()
 
@@ -243,26 +262,11 @@ class VehicleSettingsDialog(BaseSettingsDialog):
         content_frame.pack(fill=tk.BOTH, expand=True)
 
         # --- Top Section: List + Right Actions ---
-        list_frame = ttk.Frame(content_frame)
-        list_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 15))
-
-        ttk.Label(list_frame, text="Current Vehicles:").pack(
+        ttk.Label(content_frame, text="Current Vehicles:").pack(
             anchor="w", pady=(0, 5)
         )
 
-        # Listbox (Left)
-        self.lb = tk.Listbox(list_frame, height=10, font=("Segoe UI", 11))
-        scrollbar = ttk.Scrollbar(
-            list_frame, orient="vertical", command=self.lb.yview
-        )
-        self.lb.configure(yscrollcommand=scrollbar.set)
-
-        self.lb.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        scrollbar.pack(side=tk.LEFT, fill=tk.Y)
-
-        # Side Buttons (Right)
-        side_btn_frame = ttk.Frame(list_frame, padding=(10, 0))
-        side_btn_frame.pack(side=tk.RIGHT, fill=tk.Y)
+        self.lb, side_btn_frame = self._create_scrolled_list(content_frame)
 
         ttk.Button(
             side_btn_frame,
@@ -349,39 +353,18 @@ class ChecklistSettingsDialog(BaseSettingsDialog):
         content_frame.pack(fill=tk.BOTH, expand=True)
 
         # Top Section: Treeview + Side Buttons
-        top_frame = ttk.Frame(content_frame)
-        top_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
-
-        # --- Treeview (Left) ---
-        tree_frame = ttk.Frame(top_frame)
-        tree_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-
         columns = ("name", "type", "options", "rule")
-        self.tree = ttk.Treeview(
-            tree_frame, columns=columns, show="headings", selectmode="browse"
-        )
-        self.tree.heading("name", text="Name")
-        self.tree.heading("type", text="Type")
-        self.tree.heading("options", text="Options")
-        self.tree.heading("rule", text="Rule")
+        headings = ("Name", "Type", "Options", "Rule")
+        self.tree, btn_frame = self._create_scrolled_tree(content_frame, columns, headings)
 
         self.tree.column("name", width=200)
         self.tree.column("type", width=100)
         self.tree.column("options", width=100)
         self.tree.column("rule", width=100)
 
-        scrollbar = ttk.Scrollbar(
-            tree_frame, orient="vertical", command=self.tree.yview
-        )
-        self.tree.configure(yscroll=scrollbar.set)
-
-        self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self.tree.bind("<Double-1>", lambda e: self.edit_item())
 
         # --- Action Buttons (Right) ---
-        btn_frame = ttk.Frame(top_frame, padding=(10, 0))
-        btn_frame.pack(side=tk.RIGHT, fill=tk.Y)
-
         ttk.Button(
             btn_frame, text="▲ Move Up", command=lambda: self.move_item(-1)
         ).pack(fill=tk.X, pady=2)
@@ -560,6 +543,7 @@ class ChecklistSettingsDialog(BaseSettingsDialog):
         dlg.geometry("400x350")
         dlg.transient(self)
         dlg.grab_set()
+        dlg.focus_set()
 
         # Center dialog
         self.update_idletasks()
@@ -574,6 +558,7 @@ class ChecklistSettingsDialog(BaseSettingsDialog):
         entry_name = ttk.Entry(main_frame)
         entry_name.pack(fill=tk.X, pady=(5, 10))
         entry_name.insert(0, data["name"])
+        entry_name.focus_set()
 
         ttk.Label(main_frame, text="Type:").pack(anchor="w")
         type_var = tk.StringVar(value=data["type"])
@@ -802,7 +787,7 @@ class LogEditDialog(BaseSettingsDialog):
         # Note
         note_frame = ttk.LabelFrame(main_frame, text="Note", padding=10)
         note_frame.pack(fill=tk.X, pady=5)
-        
+
         font_size = int(self.db.get_setting("font_size", 10))
         self.text_note = scrolledtext.ScrolledText(
             note_frame, height=5, font=("Segoe UI", font_size)
@@ -1056,7 +1041,7 @@ class FlightDetailsDialog(tk.Toplevel):
 
         for widget in self.container.winfo_children():
             widget.destroy()
-        
+
         self.create_widgets(checks_json)
         self.title(f"Flight Details - {self.date} (ID: {self.flight_no})")
 
@@ -1065,7 +1050,7 @@ class FlightDetailsDialog(tk.Toplevel):
         # Top Action Buttons
         action_frame = ttk.Frame(self.container, padding=10)
         action_frame.pack(fill=tk.X)
-        
+
         edit_btn = ttk.Button(action_frame, text="Edit Log Info", command=self.edit_log)
         edit_btn.pack(side=tk.LEFT, padx=5)
         if self.db.get_setting("enable_edit_log", "1") == "0":
@@ -1095,7 +1080,7 @@ class FlightDetailsDialog(tk.Toplevel):
         if self.note:
             note_frame = ttk.LabelFrame(self.container, text="Note", padding=10)
             note_frame.pack(fill=tk.X, padx=10, pady=5)
-            
+
             font_size = int(self.db.get_setting("font_size", 10))
             st = scrolledtext.ScrolledText(
                 note_frame, height=3, font=("Segoe UI", font_size)
@@ -1165,14 +1150,14 @@ class FlightDetailsDialog(tk.Toplevel):
         ttk.Button(
             param_frame, text="Compare...", command=self.open_compare
         ).pack(side=tk.LEFT, padx=5)
-        
+
         is_param_none = not self.param_content or not self.param_content.strip()
         param_btn_text = "Upload Params..." if is_param_none else "Update Params..."
         upd_param_btn = ttk.Button(
             param_frame, text=param_btn_text, command=self.update_params
         )
         upd_param_btn.pack(side=tk.LEFT, padx=5)
-        
+
         # Enable if setting is on OR if it's a first-time upload
         if self.db.get_setting("enable_update_params", "1") == "0" and not is_param_none:
             upd_param_btn.state(["disabled"])
@@ -1190,14 +1175,14 @@ class FlightDetailsDialog(tk.Toplevel):
             ttk.Button(
                 log_frame, text="Export Log", command=self.export_log
             ).pack(side=tk.RIGHT, padx=5)
-        
+
         is_none = not self.log_path
         btn_text = "Upload Log File..." if is_none else "Update Log File..."
         upd_log_btn = ttk.Button(
             log_frame, text=btn_text, command=self.update_log_file
         )
         upd_log_btn.pack(side=tk.RIGHT, padx=5)
-        
+
         # Enable if setting is on OR if it's a first-time upload (is_none)
         if self.db.get_setting("enable_update_log_file", "1") == "0" and not is_none:
             upd_log_btn.state(["disabled"])
@@ -1219,11 +1204,11 @@ class FlightDetailsDialog(tk.Toplevel):
             try:
                 with open(filename, "r") as f:
                     new_content = f.read()
-                
+
                 # Get current log data to update
                 row = self.db.get_log_by_id(self.log_id)
                 if not row: return
-                
+
                 log_data = {
                     "flight_no": row[0],
                     "date": row[1],
@@ -1234,7 +1219,7 @@ class FlightDetailsDialog(tk.Toplevel):
                     "mission_title": row[6],
                     "note": row[7]
                 }
-                
+
                 self.db.update_log(self.log_id, log_data)
                 self.param_content = new_content
                 messagebox.showinfo("Success", "Parameter data updated.")
@@ -1252,15 +1237,15 @@ class FlightDetailsDialog(tk.Toplevel):
                 if not self.file_manager:
                     messagebox.showerror("Error", "File manager not available.")
                     return
-                
+
                 new_path = self.file_manager.save_log_file(
                     filename, self.date, self.vehicle, self.flight_no
                 )
-                
+
                 # Get current log data to update
                 row = self.db.get_log_by_id(self.log_id)
                 if not row: return
-                
+
                 log_data = {
                     "flight_no": row[0],
                     "date": row[1],
@@ -1271,7 +1256,7 @@ class FlightDetailsDialog(tk.Toplevel):
                     "mission_title": row[6],
                     "note": row[7]
                 }
-                
+
                 self.db.update_log(self.log_id, log_data)
                 self.log_path = new_path
                 messagebox.showinfo("Success", "Flight log file updated.")

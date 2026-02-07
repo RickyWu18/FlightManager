@@ -1,24 +1,68 @@
-"""Utility functions for parameter parsing and comparison.
+"""Utility functions for parameter parsing and comparison."""
 
-This module provides functions to parse parameter files, filter them based on
-ignore patterns, and compare two sets of parameters to identify additions,
-removals, and changes.
-"""
-
+import ast
 import fnmatch
-import math
+import operator as op_lib
 from typing import Any, Dict, List, Optional, Tuple
 
+# Security-safe operators mapping for AST evaluation
+SAFE_OPERATORS = {
+    ast.Add: op_lib.add,
+    ast.Sub: op_lib.sub,
+    ast.Mult: op_lib.mul,
+    ast.Div: op_lib.truediv,
+    ast.Mod: op_lib.mod,
+    ast.Pow: op_lib.pow,
+    ast.USub: op_lib.neg,
+    ast.UAdd: op_lib.pos,
+    ast.Gt: op_lib.gt,
+    ast.Lt: op_lib.lt,
+    ast.GtE: op_lib.ge,
+    ast.LtE: op_lib.le,
+    ast.Eq: op_lib.eq,
+    ast.NotEq: op_lib.ne,
+}
+
+def _safe_eval(node, variables):
+    """Recursively evaluates an AST node safely."""
+    if isinstance(node, ast.Constant): # Python 3.8+
+        return node.value
+    elif hasattr(ast, 'Num') and isinstance(node, ast.Constant): # Pre-3.8
+        return node.n
+    elif hasattr(ast, 'Str') and isinstance(node, ast.Constant): # Pre-3.8
+        return node.s
+    elif hasattr(ast, 'NameConstant') and isinstance(node, ast.Constant): # Pre-3.8
+        return node.value
+    elif isinstance(node, ast.BinOp):
+        return SAFE_OPERATORS[type(node.op)](_safe_eval(node.left, variables), _safe_eval(node.right, variables))
+    elif isinstance(node, ast.UnaryOp):
+        return SAFE_OPERATORS[type(node.op)](_safe_eval(node.operand, variables))
+    elif isinstance(node, ast.Compare):
+        left = _safe_eval(node.left, variables)
+        for op, right_node in zip(node.ops, node.comparators):
+            right = _safe_eval(right_node, variables)
+            if not SAFE_OPERATORS[type(op)](left, right):
+                return False
+            left = right
+        return True
+    elif isinstance(node, ast.Name):
+        if node.id in variables:
+            return variables[node.id]
+        raise ValueError(f"Unknown variable: {node.id}")
+    elif isinstance(node, ast.Expression):
+        return _safe_eval(node.body, variables)
+    else:
+        raise TypeError(f"Unsupported operation: {type(node).__name__}")
 
 def validate_checklist_rule(value: Any, rule_str: str) -> Tuple[bool, str]:
-    """Validates a value against a rule string expression.
+    """Validates a value against a rule string expression securely.
 
-    Supports simple Python expressions where 'value' is the variable.
-    Multiple rules can be separated by commas.
+    Supports mathematical expressions (e.g., 'value/2 > 3.9') and keywords.
+    Uses AST-based safe evaluation instead of unsafe eval().
 
     Args:
         value: The value to validate (string, float, bool).
-        rule_str: The rule string (e.g., "value > 10, value < 20").
+        rule_str: The rule string (e.g., "value > 10, required").
 
     Returns:
         A tuple (is_valid, error_message).
@@ -26,62 +70,53 @@ def validate_checklist_rule(value: Any, rule_str: str) -> Tuple[bool, str]:
     if not rule_str:
         return True, ""
 
-    # Prepare Context
-    # Try to convert string input to float if possible for numeric comparisons
+    # Normalize value for comparison
+    val_str = str(value).strip() if value is not None else ""
     eval_value = value
-    if isinstance(value, str):
-        value = value.strip()
-        if not value:
-            # Empty string handling depends on rule logic, but usually fails numeric rules
-            eval_value = "" 
-        else:
-            try:
-                eval_value = float(value)
-            except ValueError:
-                eval_value = value
-    
-    # Context for eval
-    context = {
-        "value": eval_value,
-        "math": math,
-        "true": True,
-        "false": False,
-        "len": len,
-        "str": str,
-        "int": int,
-        "float": float,
-    }
+    if not isinstance(value, bool):
+        try:
+            eval_value = float(val_str)
+        except ValueError:
+            eval_value = val_str
 
-    # Split by comma to support multiple rules
-    # Basic split, assumes no commas in string literals within rules
+    val_bool = value if isinstance(value, bool) else (val_str.lower() == "true")
+    context = {"value": eval_value, "True": True, "False": False, "None": None}
+
     rules = [r.strip() for r in rule_str.split(",")]
 
     for rule in rules:
         if not rule:
             continue
-        
-        # Backward Compatibility / Short-hand syntax
+
+        rule_lower = rule.lower()
+
+        # 1. Keywords (Shorthand)
+        if rule_lower == "required":
+            if not val_str:
+                return False, "Required"
+            continue
+        if rule_lower == "checked":
+            if not val_bool:
+                return False, "Must be checked"
+            continue
+        if rule_lower == "unchecked":
+            if val_bool:
+                return False, "Must be unchecked"
+            continue
+
+        # 2. Expression Evaluation
         expr = rule
-        if rule.lower() == "checked":
-            expr = "value == True"
-        elif rule.lower() == "unchecked":
-            expr = "value == False"
-        elif rule.lower() == "required":
-            expr = "bool(str(value))" # Check for non-empty string
-        elif rule.startswith(">") and rule[1:].strip().replace('.', '', 1).isdigit():
-            # Support ">10" style
-            expr = f"value > {rule[1:]}"
-        elif rule.startswith("<") and rule[1:].strip().replace('.', '', 1).isdigit():
-            expr = f"value < {rule[1:]}"
-            
+        # Support shorthand like "> 10" by prepending "value"
+        if expr.strip().startswith((">","<","=","!")):
+            expr = "value " + expr
+
         try:
-            # Restricted eval
-            result = eval(expr, {"__builtins__": None}, context)
+            tree = ast.parse(expr, mode='eval')
+            result = _safe_eval(tree, context)
             if not result:
-                return False, f"Rule failed: {rule}"
+                return False, f"Condition failed: {rule}"
         except Exception as e:
-            # If evaluation crashes (e.g. comparing str > int), it's a fail
-            return False, f"Error evaluating rule '{rule}': {e}"
+            return False, f"Error processing rule '{rule}': {e}"
 
     return True, ""
 
