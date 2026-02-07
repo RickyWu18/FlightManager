@@ -81,9 +81,10 @@ class FlightManagerApp:
             max_size = float(self.db.get_setting("log_max_size_gb", "0"))
             retention = int(self.db.get_setting("log_retention_days", "0"))
             if max_size > 0 or retention > 0:
+                excluded = self.db.get_locked_log_paths()
                 threading.Thread(
                     target=self.file_manager.cleanup_logs,
-                    args=(max_size, retention),
+                    args=(max_size, retention, excluded),
                     daemon=True
                 ).start()
         except Exception:
@@ -130,8 +131,9 @@ class FlightManagerApp:
             max_size = float(self.db.get_setting("log_max_size_gb", "0"))
             retention = int(self.db.get_setting("log_retention_days", "0"))
             if max_size > 0 or retention > 0:
+                excluded = self.db.get_locked_log_paths()
                 # Perform cleanup synchronously before exit
-                self.file_manager.cleanup_logs(max_size, retention)
+                self.file_manager.cleanup_logs(max_size, retention, excluded)
         except Exception:
             pass
         self.root.destroy()
@@ -1099,12 +1101,16 @@ class FlightManagerApp:
         for row in rows:
             # Row structure from get_logs:
             # id(0), flight_no(1), date(2), vehicle_name(3), system_check(4),
-            # mission(5), param(6), log_path(7), note(8)
+            # mission(5), param(6), log_path(7), note(8), is_locked(9)
+
+            flight_no_display = str(row[1])
+            if row[9]: # is_locked
+                flight_no_display += " 🔒"
 
             # Display: id, flight_no, date, vehicle, mission, note
             display_data = [
                 row[0],
-                row[1],
+                flight_no_display,
                 row[2],
                 row[3],
                 row[5] or "",

@@ -9,6 +9,7 @@ import shutil
 import re
 import datetime
 import time
+from typing import List
 
 
 class FileManager:
@@ -63,12 +64,13 @@ class FileManager:
 
         return dest_path
 
-    def cleanup_logs(self, max_size_gb: float = 0, retention_days: int = 0) -> int:
+    def cleanup_logs(self, max_size_gb: float = 0, retention_days: int = 0, excluded_paths: List[str] = None) -> int:
         """Cleans up old log files based on size and age constraints.
 
         Args:
             max_size_gb: Maximum total size of logs in GB (0 for unlimited).
             retention_days: Maximum age of logs in days (0 for unlimited).
+            excluded_paths: List of file paths to never delete (e.g. locked logs).
 
         Returns:
             The number of files deleted.
@@ -76,13 +78,16 @@ class FileManager:
         if not os.path.exists(self.base_dir):
             return 0
 
+        excluded_paths = [os.path.abspath(p) for p in (excluded_paths or [])]
         deleted_count = 0
         files = []
 
         # 1. Gather file info
         for f in os.listdir(self.base_dir):
-            full_path = os.path.join(self.base_dir, f)
+            full_path = os.path.abspath(os.path.join(self.base_dir, f))
             if os.path.isfile(full_path):
+                if full_path in excluded_paths:
+                    continue
                 try:
                     stats = os.stat(full_path)
                     files.append({

@@ -53,6 +53,7 @@ class DatabaseManager:
                 system_check TEXT,
                 parameter_changes TEXT,
                 log_file_path TEXT,
+                is_locked INTEGER DEFAULT 0,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """
@@ -64,7 +65,8 @@ class DatabaseManager:
             ("vehicle_name", "TEXT"),
             ("log_file_path", "TEXT"),
             ("mission_title", "TEXT"),
-            ("note", "TEXT")
+            ("note", "TEXT"),
+            ("is_locked", "INTEGER DEFAULT 0")
         ]
         for col_name, col_type in logs_cols:
             if not self._column_exists("logs", col_name):
@@ -423,6 +425,28 @@ class DatabaseManager:
         res = cursor.fetchone()[0]
         return (res if res is not None else 0) + 1
 
+    def toggle_log_lock(self, log_id: int) -> bool:
+        """Toggles the locked status of a flight log.
+
+        Args:
+            log_id: The ID of the flight log.
+
+        Returns:
+            True if successful.
+        """
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT is_locked FROM logs WHERE id = ?", (log_id,))
+        res = cursor.fetchone()
+        if res:
+            new_state = 0 if res[0] else 1
+            self.conn.execute(
+                "UPDATE logs SET is_locked = ? WHERE id = ?",
+                (new_state, log_id),
+            )
+            self.conn.commit()
+            return True
+        return False
+
     def insert_log(self, data: Dict[str, Any]) -> bool:
         """Inserts a new flight log into the database.
 
@@ -441,11 +465,11 @@ class DatabaseManager:
                 """
                 INSERT INTO logs (
                     flight_no, date, vehicle_name, mission_title, note,
-                    system_check, parameter_changes, log_file_path
+                    system_check, parameter_changes, log_file_path, is_locked
                 )
                 VALUES (
                     :flight_no, :date, :vehicle_name, :mission_title, :note,
-                    :system_check, :parameter_changes, :log_file_path
+                    :system_check, :parameter_changes, :log_file_path, :is_locked
                 )
                 """,
                 data,
@@ -478,7 +502,8 @@ class DatabaseManager:
                     note = :note,
                     system_check = :system_check,
                     parameter_changes = :parameter_changes,
-                    log_file_path = :log_file_path
+                    log_file_path = :log_file_path,
+                    is_locked = :is_locked
                 WHERE id = :id
             """
             data["id"] = log_id
@@ -498,6 +523,13 @@ class DatabaseManager:
             True if successful.
         """
         try:
+            # Check if locked
+            cursor = self.conn.cursor()
+            cursor.execute("SELECT is_locked FROM logs WHERE id = ?", (log_id,))
+            res = cursor.fetchone()
+            if res and res[0]:
+                return False
+
             self.conn.execute("DELETE FROM logs WHERE id = ?", (log_id,))
             self.conn.commit()
             return True
@@ -530,7 +562,7 @@ class DatabaseManager:
         """
         query = (
             "SELECT id, flight_no, date, vehicle_name, system_check, "
-            "mission_title, parameter_changes, log_file_path, note "
+            "mission_title, parameter_changes, log_file_path, note, is_locked "
             "FROM logs WHERE 1=1"
         )
         params = []
@@ -554,6 +586,7 @@ class DatabaseManager:
             "system_check",
             "mission_title",
             "note",
+            "is_locked"
         ]
         if sort_col not in allowed_sort:
             sort_col = "id"
@@ -616,7 +649,7 @@ class DatabaseManager:
         cursor = self.conn.cursor()
         cursor.execute(
             "SELECT flight_no, date, vehicle_name, system_check, "
-            "parameter_changes, log_file_path, mission_title, note "
+            "parameter_changes, log_file_path, mission_title, note, is_locked "
             "FROM logs WHERE id = ?",
             (log_id,),
         )
@@ -638,6 +671,16 @@ class DatabaseManager:
             (vehicle_name,),
         )
         return cursor.fetchall()
+
+    def get_locked_log_paths(self) -> List[str]:
+        """Retrieves all log file paths that are locked.
+
+        Returns:
+            A list of absolute file paths.
+        """
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT log_file_path FROM logs WHERE is_locked = 1")
+        return [r[0] for r in cursor.fetchall() if r[0]]
 
     # --- Import / Export ---
     def get_all_settings(self) -> Dict[str, Any]:

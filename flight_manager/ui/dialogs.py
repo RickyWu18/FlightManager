@@ -180,7 +180,7 @@ class PreferencesDialog(BaseSettingsDialog):
 
         for key, var in self.vars.items():
             self.db.set_setting(key, "1" if var.get() else "0")
-            
+
         # Save Storage Settings
         self.db.set_setting("log_max_size_gb", str(self.max_size_var.get()))
         self.db.set_setting("log_retention_days", str(self.retention_var.get()))
@@ -1037,6 +1037,7 @@ class FlightDetailsDialog(tk.Toplevel):
             self.log_path,
             self.mission,
             self.note,
+            self.is_locked,
         ) = row
         self.title(f"Flight Details - {self.date} (ID: {self.flight_no})")
         self.geometry("600x850")
@@ -1060,6 +1061,7 @@ class FlightDetailsDialog(tk.Toplevel):
             self.log_path,
             self.mission,
             self.note,
+            self.is_locked,
         ) = row
 
         for widget in self.container.winfo_children():
@@ -1076,13 +1078,17 @@ class FlightDetailsDialog(tk.Toplevel):
 
         edit_btn = ttk.Button(action_frame, text="Edit Log Info", command=self.edit_log)
         edit_btn.pack(side=tk.LEFT, padx=5)
-        if self.db.get_setting("enable_edit_log", "1") == "0":
+        if self.db.get_setting("enable_edit_log", "1") == "0" or self.is_locked:
             edit_btn.state(["disabled"])
 
         del_btn = ttk.Button(action_frame, text="Delete Log", command=self.delete_log)
         del_btn.pack(side=tk.LEFT, padx=5)
-        if self.db.get_setting("enable_delete_log", "1") == "0":
+        if self.db.get_setting("enable_delete_log", "1") == "0" or self.is_locked:
             del_btn.state(["disabled"])
+
+        lock_text = "🔓 Unlock Log" if self.is_locked else "🔒 Lock Log"
+        lock_btn = ttk.Button(action_frame, text=lock_text, command=self.toggle_lock)
+        lock_btn.pack(side=tk.LEFT, padx=5)
 
         info_frame = ttk.LabelFrame(self.container, text="Information", padding=10)
         info_frame.pack(fill=tk.X, padx=10, pady=5)
@@ -1182,7 +1188,7 @@ class FlightDetailsDialog(tk.Toplevel):
         upd_param_btn.pack(side=tk.LEFT, padx=5)
 
         # Enable if setting is on OR if it's a first-time upload
-        if self.db.get_setting("enable_update_params", "1") == "0" and not is_param_none:
+        if (self.db.get_setting("enable_update_params", "1") == "0" or self.is_locked) and not is_param_none:
             upd_param_btn.state(["disabled"])
 
         ttk.Button(
@@ -1191,10 +1197,21 @@ class FlightDetailsDialog(tk.Toplevel):
 
         log_frame = ttk.LabelFrame(self.container, text="Flight Log File", padding=10)
         log_frame.pack(fill=tk.X, padx=10, pady=5)
-        self.lbl_log_file = ttk.Label(log_frame, text=f"File: {os.path.basename(self.log_path) if self.log_path else 'None'}")
+
+        file_exists = self.log_path and os.path.exists(self.log_path)
+        display_name = os.path.basename(self.log_path) if self.log_path else "None"
+
+        font_size = int(self.db.get_setting("font_size", 10))
+        label_font = ("Segoe UI", font_size)
+
+        if self.log_path and not file_exists:
+            display_name += " [REMOVED]"
+            label_font = ("Segoe UI", font_size, "overstrike")
+
+        self.lbl_log_file = tk.Label(log_frame, text=f"File: {display_name}", font=label_font)
         self.lbl_log_file.pack(side=tk.LEFT, padx=5)
 
-        if self.log_path:
+        if self.log_path and file_exists:
             ttk.Button(
                 log_frame, text="Export Log", command=self.export_log
             ).pack(side=tk.RIGHT, padx=5)
@@ -1207,8 +1224,15 @@ class FlightDetailsDialog(tk.Toplevel):
         upd_log_btn.pack(side=tk.RIGHT, padx=5)
 
         # Enable if setting is on OR if it's a first-time upload (is_none)
-        if self.db.get_setting("enable_update_log_file", "1") == "0" and not is_none:
+        if (self.db.get_setting("enable_update_log_file", "1") == "0" or self.is_locked) and not is_none:
             upd_log_btn.state(["disabled"])
+
+    def toggle_lock(self):
+        """Toggles the lock status of the log."""
+        if self.db.toggle_log_lock(self.log_id):
+            self.refresh_ui()
+            if self.on_update_callback:
+                self.on_update_callback()
 
     def open_compare(self):
         """Opens the comparison dialog for this flight."""
