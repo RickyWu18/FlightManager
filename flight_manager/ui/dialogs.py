@@ -833,6 +833,7 @@ class LogEditDialog(BaseSettingsDialog):
             "note": note,
             "system_check": system_check_json,
             "parameter_changes": self.param_content,
+            "log_file_path": self.log_path,
         }
 
         try:
@@ -1007,12 +1008,37 @@ class FlightDetailsDialog(tk.Toplevel):
         self.title(f"Flight Details - {self.date} (ID: {self.flight_no})")
         self.geometry("600x850")
 
+        self.container = ttk.Frame(self)
+        self.container.pack(fill=tk.BOTH, expand=True)
         self.create_widgets(checks_json)
+
+    def refresh_ui(self):
+        """Reloads data from DB and refreshes the UI widgets."""
+        row = self.db.get_log_by_id(self.log_id)
+        if not row:
+            self.destroy()
+            return
+        (
+            self.flight_no,
+            self.date,
+            self.vehicle,
+            checks_json,
+            self.param_content,
+            self.log_path,
+            self.mission,
+            self.note,
+        ) = row
+
+        for widget in self.container.winfo_children():
+            widget.destroy()
+        
+        self.create_widgets(checks_json)
+        self.title(f"Flight Details - {self.date} (ID: {self.flight_no})")
 
     def create_widgets(self, checks_json: str):
         """Creates the widgets for the dialog."""
         # Top Action Buttons
-        action_frame = ttk.Frame(self, padding=10)
+        action_frame = ttk.Frame(self.container, padding=10)
         action_frame.pack(fill=tk.X)
         
         edit_btn = ttk.Button(action_frame, text="Edit Log Info", command=self.edit_log)
@@ -1025,7 +1051,7 @@ class FlightDetailsDialog(tk.Toplevel):
         if self.db.get_setting("enable_delete_log", "1") == "0":
             del_btn.state(["disabled"])
 
-        info_frame = ttk.LabelFrame(self, text="Information", padding=10)
+        info_frame = ttk.LabelFrame(self.container, text="Information", padding=10)
         info_frame.pack(fill=tk.X, padx=10, pady=5)
         ttk.Label(info_frame, text=f"Date: {self.date}").grid(
             row=0, column=0, sticky="w", padx=10
@@ -1042,7 +1068,7 @@ class FlightDetailsDialog(tk.Toplevel):
             )
 
         if self.note:
-            note_frame = ttk.LabelFrame(self, text="Note", padding=10)
+            note_frame = ttk.LabelFrame(self.container, text="Note", padding=10)
             note_frame.pack(fill=tk.X, padx=10, pady=5)
             
             font_size = int(self.db.get_setting("font_size", 10))
@@ -1053,7 +1079,7 @@ class FlightDetailsDialog(tk.Toplevel):
             st.config(state="disabled")
             st.pack(fill=tk.BOTH, expand=True)
 
-        check_frame = ttk.LabelFrame(self, text="Preflight Check", padding=10)
+        check_frame = ttk.LabelFrame(self.container, text="Preflight Check", padding=10)
         check_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
 
         canvas = tk.Canvas(check_frame, height=200)
@@ -1108,7 +1134,7 @@ class FlightDetailsDialog(tk.Toplevel):
                 )
                 chk.pack(side=tk.LEFT)
 
-        param_frame = ttk.LabelFrame(self, text="Parameter Data", padding=10)
+        param_frame = ttk.LabelFrame(self.container, text="Parameter Data", padding=10)
         param_frame.pack(fill=tk.X, padx=10, pady=5)
 
         ttk.Button(
@@ -1130,7 +1156,7 @@ class FlightDetailsDialog(tk.Toplevel):
             param_frame, text="Export Params", command=self.export_params
         ).pack(side=tk.LEFT, padx=5)
 
-        log_frame = ttk.LabelFrame(self, text="Flight Log File", padding=10)
+        log_frame = ttk.LabelFrame(self.container, text="Flight Log File", padding=10)
         log_frame.pack(fill=tk.X, padx=10, pady=5)
         self.lbl_log_file = ttk.Label(log_frame, text=f"File: {os.path.basename(self.log_path) if self.log_path else 'None'}")
         self.lbl_log_file.pack(side=tk.LEFT, padx=5)
@@ -1189,6 +1215,7 @@ class FlightDetailsDialog(tk.Toplevel):
                 messagebox.showinfo("Success", "Parameter data updated.")
                 if self.on_update_callback:
                     self.on_update_callback()
+                self.refresh_ui()
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to update parameters: {e}")
 
@@ -1222,26 +1249,21 @@ class FlightDetailsDialog(tk.Toplevel):
                 
                 self.db.update_log(self.log_id, log_data)
                 self.log_path = new_path
-                self.lbl_log_file.config(text=f"File: {os.path.basename(new_path)}")
                 messagebox.showinfo("Success", "Flight log file updated.")
                 if self.on_update_callback:
                     self.on_update_callback()
+                self.refresh_ui()
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to update log file: {e}")
 
     def edit_log(self):
         """Opens the edit dialog for this flight."""
-        def refresh_and_close():
+        def refresh_after_edit():
             if self.on_update_callback:
                 self.on_update_callback()
-            # Reload data in this dialog too if we don't close it
-            row = self.db.get_log_by_id(self.log_id)
-            if row:
-                self.flight_no, self.date, self.vehicle, _, self.param_content, self.log_path, self.mission, self.note = row
-                # We close it for simplicity as per previous implementation to ensure consistency
-                self.destroy()
+            self.refresh_ui()
 
-        LogEditDialog(self, self.db, self.log_id, on_save_callback=refresh_and_close)
+        LogEditDialog(self, self.db, self.log_id, on_save_callback=refresh_after_edit)
 
     def delete_log(self):
         """Deletes this flight log after confirmation."""
