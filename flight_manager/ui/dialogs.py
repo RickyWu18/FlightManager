@@ -140,6 +140,25 @@ class PreferencesDialog(BaseSettingsDialog):
             chk.pack(anchor="w", pady=2)
             self.vars[key] = var
 
+        ttk.Separator(content_frame, orient="horizontal").pack(fill=tk.X, pady=10)
+
+        # Log Storage Management
+        ttk.Label(content_frame, text="Log Storage Management:", font=("Segoe UI", 11, "bold")).pack(anchor="w", pady=(0, 5))
+
+        # Max Size
+        ttk.Label(content_frame, text="Max Log Folder Size (GB, 0=Unlimited):").pack(anchor="w")
+        current_max_size = float(self.db.get_setting("log_max_size_gb", "0"))
+        self.max_size_var = tk.DoubleVar(value=current_max_size)
+        self.spin_max_size = ttk.Spinbox(content_frame, from_=0, to_=9999, increment=0.1, textvariable=self.max_size_var, width=10)
+        self.spin_max_size.pack(anchor="w", pady=(0, 5))
+
+        # Retention
+        ttk.Label(content_frame, text="Retention Period (Days, 0=Unlimited):").pack(anchor="w")
+        current_retention = int(self.db.get_setting("log_retention_days", "0"))
+        self.retention_var = tk.IntVar(value=current_retention)
+        self.spin_retention = ttk.Spinbox(content_frame, from_=0, to_=9999, textvariable=self.retention_var, width=10)
+        self.spin_retention.pack(anchor="w", pady=(0, 5))
+
         btn_frame = ttk.Frame(content_frame)
         btn_frame.pack(fill=tk.X, pady=20)
 
@@ -161,6 +180,10 @@ class PreferencesDialog(BaseSettingsDialog):
 
         for key, var in self.vars.items():
             self.db.set_setting(key, "1" if var.get() else "0")
+            
+        # Save Storage Settings
+        self.db.set_setting("log_max_size_gb", str(self.max_size_var.get()))
+        self.db.set_setting("log_retention_days", str(self.retention_var.get()))
 
         if self.on_save_callback:
             self.on_save_callback(new_size)

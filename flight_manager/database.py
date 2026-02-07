@@ -148,6 +148,8 @@ class DatabaseManager:
             ("enable_delete_log", "1"),
             ("enable_update_params", "1"),
             ("enable_update_log_file", "1"),
+            ("log_max_size_gb", "0"),
+            ("log_retention_days", "0"),
         ]
         for key, val in feature_defaults:
             cursor.execute("SELECT COUNT(*) FROM settings WHERE key = ?", (key,))

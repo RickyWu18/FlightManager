@@ -76,6 +76,22 @@ class FlightManagerApp:
         self.db = DatabaseManager()
         self.file_manager = FileManager()
 
+        # Run Log Cleanup (Async)
+        try:
+            max_size = float(self.db.get_setting("log_max_size_gb", "0"))
+            retention = int(self.db.get_setting("log_retention_days", "0"))
+            if max_size > 0 or retention > 0:
+                threading.Thread(
+                    target=self.file_manager.cleanup_logs,
+                    args=(max_size, retention),
+                    daemon=True
+                ).start()
+        except Exception:
+            pass # Fail silently on startup cleanup
+
+        # Set Window Close Handler
+        self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
+
         # Apply Global Font Size
         self.initial_font_size = int(self.db.get_setting("font_size", 10))
         self.apply_font_size(self.initial_font_size)
@@ -107,6 +123,18 @@ class FlightManagerApp:
 
         # Initial Calculations
         self.calculate_next_id()
+
+    def on_closing(self):
+        """Handles the window close event, performing final cleanup."""
+        try:
+            max_size = float(self.db.get_setting("log_max_size_gb", "0"))
+            retention = int(self.db.get_setting("log_retention_days", "0"))
+            if max_size > 0 or retention > 0:
+                # Perform cleanup synchronously before exit
+                self.file_manager.cleanup_logs(max_size, retention)
+        except Exception:
+            pass
+        self.root.destroy()
 
     def change_filter_date(self, days: int):
         """Changes the filter date by a specified number of days.

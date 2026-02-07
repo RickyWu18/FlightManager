@@ -7,6 +7,8 @@ and managing directory structures.
 import os
 import shutil
 import re
+import datetime
+import time
 
 
 class FileManager:
@@ -60,3 +62,88 @@ class FileManager:
         shutil.copy2(source_path, dest_path)
 
         return dest_path
+
+    def cleanup_logs(self, max_size_gb: float = 0, retention_days: int = 0) -> int:
+        """Cleans up old log files based on size and age constraints.
+
+        Args:
+            max_size_gb: Maximum total size of logs in GB (0 for unlimited).
+            retention_days: Maximum age of logs in days (0 for unlimited).
+
+        Returns:
+            The number of files deleted.
+        """
+        if not os.path.exists(self.base_dir):
+            return 0
+
+        deleted_count = 0
+        files = []
+
+        # 1. Gather file info
+        for f in os.listdir(self.base_dir):
+            full_path = os.path.join(self.base_dir, f)
+            if os.path.isfile(full_path):
+                try:
+                    stats = os.stat(full_path)
+                    files.append({
+                        "path": full_path,
+                        "name": f,
+                        "size": stats.st_size,
+                        "mtime": stats.st_mtime
+                    })
+                except OSError:
+                    continue
+
+        # 2. Date-based Cleanup
+        if retention_days > 0:
+            cutoff_date = datetime.date.today() - datetime.timedelta(days=retention_days)
+            remaining_files = []
+            
+            for file_info in files:
+                should_delete = False
+                
+                # Try to parse date from filename first (YYYY-MM-DD_...)
+                # format: new_filename = f"{safe_date}_{safe_vehicle}_{safe_id}_{safe_orig}"
+                try:
+                    date_part = file_info["name"].split("_")[0]
+                    file_date = datetime.datetime.strptime(date_part, "%Y-%m-%d").date()
+                    if file_date < cutoff_date:
+                        should_delete = True
+                except (ValueError, IndexError):
+                    # Fallback to modification time
+                    file_date = datetime.date.fromtimestamp(file_info["mtime"])
+                    if file_date < cutoff_date:
+                        should_delete = True
+
+                if should_delete:
+                    try:
+                        os.remove(file_info["path"])
+                        deleted_count += 1
+                    except OSError:
+                        remaining_files.append(file_info) # Failed to delete, keep in list
+                else:
+                    remaining_files.append(file_info)
+            
+            files = remaining_files
+
+        # 3. Size-based Cleanup
+        if max_size_gb > 0:
+            max_size_bytes = max_size_gb * 1024 * 1024 * 1024
+            total_size = sum(f["size"] for f in files)
+
+            if total_size > max_size_bytes:
+                # Sort by mtime (oldest first)
+                files.sort(key=lambda x: x["mtime"])
+
+                for file_info in files:
+                    if total_size <= max_size_bytes:
+                        break
+                    
+                    try:
+                        os.remove(file_info["path"])
+                        deleted_count += 1
+                        total_size -= file_info["size"]
+                    except OSError:
+                        pass # Skip if cannot delete
+
+        return deleted_count
