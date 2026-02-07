@@ -6,7 +6,84 @@ removals, and changes.
 """
 
 import fnmatch
-from typing import Dict, List, Optional, Tuple
+import math
+from typing import Any, Dict, List, Optional, Tuple
+
+
+def validate_checklist_rule(value: Any, rule_str: str) -> Tuple[bool, str]:
+    """Validates a value against a rule string expression.
+
+    Supports simple Python expressions where 'value' is the variable.
+    Multiple rules can be separated by commas.
+
+    Args:
+        value: The value to validate (string, float, bool).
+        rule_str: The rule string (e.g., "value > 10, value < 20").
+
+    Returns:
+        A tuple (is_valid, error_message).
+    """
+    if not rule_str:
+        return True, ""
+
+    # Prepare Context
+    # Try to convert string input to float if possible for numeric comparisons
+    eval_value = value
+    if isinstance(value, str):
+        value = value.strip()
+        if not value:
+            # Empty string handling depends on rule logic, but usually fails numeric rules
+            eval_value = "" 
+        else:
+            try:
+                eval_value = float(value)
+            except ValueError:
+                eval_value = value
+    
+    # Context for eval
+    context = {
+        "value": eval_value,
+        "math": math,
+        "true": True,
+        "false": False,
+        "len": len,
+        "str": str,
+        "int": int,
+        "float": float,
+    }
+
+    # Split by comma to support multiple rules
+    # Basic split, assumes no commas in string literals within rules
+    rules = [r.strip() for r in rule_str.split(",")]
+
+    for rule in rules:
+        if not rule:
+            continue
+        
+        # Backward Compatibility / Short-hand syntax
+        expr = rule
+        if rule.lower() == "checked":
+            expr = "value == True"
+        elif rule.lower() == "unchecked":
+            expr = "value == False"
+        elif rule.lower() == "required":
+            expr = "bool(str(value))" # Check for non-empty string
+        elif rule.startswith(">") and rule[1:].strip().replace('.', '', 1).isdigit():
+            # Support ">10" style
+            expr = f"value > {rule[1:]}"
+        elif rule.startswith("<") and rule[1:].strip().replace('.', '', 1).isdigit():
+            expr = f"value < {rule[1:]}"
+            
+        try:
+            # Restricted eval
+            result = eval(expr, {"__builtins__": None}, context)
+            if not result:
+                return False, f"Rule failed: {rule}"
+        except Exception as e:
+            # If evaluation crashes (e.g. comparing str > int), it's a fail
+            return False, f"Error evaluating rule '{rule}': {e}"
+
+    return True, ""
 
 
 def parse_params(content: str) -> Dict[str, str]:

@@ -63,6 +63,7 @@ class DatabaseManager:
                 item_name TEXT NOT NULL UNIQUE,
                 item_type TEXT DEFAULT 'checkbox',
                 options TEXT,
+                validation_rule TEXT,
                 order_index INTEGER DEFAULT 0
             )
         """
@@ -70,6 +71,12 @@ class DatabaseManager:
         try:
             cursor.execute(
                 "ALTER TABLE checklist_config ADD COLUMN order_index INTEGER DEFAULT 0"
+            )
+        except sqlite3.OperationalError:
+            pass
+        try:
+            cursor.execute(
+                "ALTER TABLE checklist_config ADD COLUMN validation_rule TEXT"
             )
         except sqlite3.OperationalError:
             pass
@@ -247,13 +254,13 @@ class DatabaseManager:
         """
         cursor = self.conn.cursor()
         cursor.execute(
-            "SELECT item_name, item_type, options, id, order_index "
+            "SELECT item_name, item_type, options, validation_rule, id, order_index "
             "FROM checklist_config ORDER BY order_index, id"
         )
         return cursor.fetchall()
 
     def add_checklist_item(
-        self, name: str, item_type: str, options: Optional[str] = None
+        self, name: str, item_type: str, options: Optional[str] = None, validation_rule: Optional[str] = None
     ) -> bool:
         """Adds a new item to the checklist configuration.
 
@@ -261,6 +268,7 @@ class DatabaseManager:
             name: The name of the checklist item.
             item_type: The type of input (e.g., 'checkbox', 'text').
             options: Comma-separated options for 'single_select' types.
+            validation_rule: Rule to validate the input (e.g., '>10', 'checked').
 
         Returns:
             True if successful, False if the item already exists.
@@ -273,9 +281,9 @@ class DatabaseManager:
 
             self.conn.execute(
                 "INSERT INTO checklist_config "
-                "(item_name, item_type, options, order_index) "
-                "VALUES (?, ?, ?, ?)",
-                (name, item_type, options, next_order),
+                "(item_name, item_type, options, validation_rule, order_index) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (name, item_type, options, validation_rule, next_order),
             )
             self.conn.commit()
             return True
@@ -637,14 +645,15 @@ class DatabaseManager:
 
         # Checklist
         cursor.execute(
-            "SELECT item_name, item_type, options, order_index FROM checklist_config"
+            "SELECT item_name, item_type, options, validation_rule, order_index FROM checklist_config"
         )
         settings["checklist"] = [
             {
                 "item_name": r[0],
                 "item_type": r[1],
                 "options": r[2],
-                "order_index": r[3],
+                "validation_rule": r[3],
+                "order_index": r[4],
             }
             for r in cursor.fetchall()
         ]
@@ -688,13 +697,14 @@ class DatabaseManager:
                         cursor.execute(
                             """
                             INSERT OR REPLACE INTO checklist_config
-                            (item_name, item_type, options, order_index)
-                            VALUES (?, ?, ?, ?)
+                            (item_name, item_type, options, validation_rule, order_index)
+                            VALUES (?, ?, ?, ?, ?)
                             """,
                             (
                                 c["item_name"],
                                 c["item_type"],
                                 c["options"],
+                                c.get("validation_rule"),
                                 c["order_index"],
                             ),
                         )

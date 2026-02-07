@@ -356,17 +356,19 @@ class ChecklistSettingsDialog(BaseSettingsDialog):
         tree_frame = ttk.Frame(top_frame)
         tree_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
-        columns = ("name", "type", "options")
+        columns = ("name", "type", "options", "rule")
         self.tree = ttk.Treeview(
             tree_frame, columns=columns, show="headings", selectmode="browse"
         )
         self.tree.heading("name", text="Name")
         self.tree.heading("type", text="Type")
         self.tree.heading("options", text="Options")
+        self.tree.heading("rule", text="Rule")
 
         self.tree.column("name", width=200)
         self.tree.column("type", width=100)
-        self.tree.column("options", width=150)
+        self.tree.column("options", width=100)
+        self.tree.column("rule", width=100)
 
         scrollbar = ttk.Scrollbar(
             tree_frame, orient="vertical", command=self.tree.yview
@@ -411,16 +413,18 @@ class ChecklistSettingsDialog(BaseSettingsDialog):
 
         checklist_items = self.db.get_checklist_items()
 
-        for name, itype, opts, pid, _ in checklist_items:
+        for name, itype, opts, rule, pid, _ in checklist_items:
             opts_display = opts if opts else ""
+            rule_display = rule if rule else ""
             item_id = self.tree.insert(
-                "", tk.END, values=(name, itype, opts_display)
+                "", tk.END, values=(name, itype, opts_display, rule_display)
             )
             self.checklist_map[item_id] = {
                 "id": pid,
                 "name": name,
                 "type": itype,
                 "options": opts,
+                "rule": rule,
             }
 
     def create_add_ui(self, parent):
@@ -452,6 +456,12 @@ class ChecklistSettingsDialog(BaseSettingsDialog):
         self.lbl_opts = ttk.Label(grid_frame, text="Options (comma sep):")
         self.entry_opts = ttk.Entry(grid_frame)
 
+        ttk.Label(grid_frame, text="Rule (eg. value > 10, value == true):").grid(
+            row=3, column=0, sticky="w", pady=2
+        )
+        self.entry_rule = ttk.Entry(grid_frame)
+        self.entry_rule.grid(row=3, column=1, sticky="ew", padx=5, pady=2)
+
         type_combo.bind("<<ComboboxSelected>>", self.toggle_options)
         self.toggle_options()
 
@@ -477,11 +487,13 @@ class ChecklistSettingsDialog(BaseSettingsDialog):
         opts = (
             self.entry_opts.get().strip() if itype == "single_select" else None
         )
+        rule = self.entry_rule.get().strip() or None
 
         if val:
-            if self.db.add_checklist_item(val, itype, opts):
+            if self.db.add_checklist_item(val, itype, opts, rule):
                 self.entry_new.delete(0, tk.END)
                 self.entry_opts.delete(0, tk.END)
+                self.entry_rule.delete(0, tk.END)
                 self.load_list()
                 # Scroll to bottom
                 if self.tree.get_children():
@@ -595,6 +607,12 @@ class ChecklistSettingsDialog(BaseSettingsDialog):
 
         update_opts_visibility()
 
+        ttk.Label(main_frame, text="Rule (eg. value > 10, value == true):").pack(anchor="w")
+        entry_rule = ttk.Entry(main_frame)
+        entry_rule.pack(fill=tk.X, pady=(5, 10))
+        if data.get("rule"):
+            entry_rule.insert(0, data["rule"])
+
         def save_edit():
             new_name = entry_name.get().strip()
             new_type = type_var.get()
@@ -603,6 +621,7 @@ class ChecklistSettingsDialog(BaseSettingsDialog):
                 if new_type == "single_select"
                 else None
             )
+            new_rule = entry_rule.get().strip() or None
 
             if not new_name:
                 messagebox.showwarning(
@@ -613,8 +632,8 @@ class ChecklistSettingsDialog(BaseSettingsDialog):
             try:
                 cursor = self.db.conn.cursor()
                 cursor.execute(
-                    "UPDATE checklist_config SET item_name=?, item_type=?, options=? WHERE id=?",
-                    (new_name, new_type, new_opts, data["id"]),
+                    "UPDATE checklist_config SET item_name=?, item_type=?, options=?, validation_rule=? WHERE id=?",
+                    (new_name, new_type, new_opts, new_rule, data["id"]),
                 )
                 self.db.conn.commit()
                 dlg.destroy()
@@ -632,6 +651,12 @@ class ChecklistSettingsDialog(BaseSettingsDialog):
         ttk.Button(main_frame, text="Save Changes", command=save_edit).pack(
             pady=10
         )
+
+    def on_close(self):
+        """Handles the dialog close event."""
+        if self.on_close_callback:
+            self.on_close_callback()
+        self.destroy()
 
 
 class LogEditDialog(BaseSettingsDialog):

@@ -17,6 +17,7 @@ from typing import Any, Dict, Optional
 from flight_manager import version
 from flight_manager.database import DatabaseManager
 from flight_manager.file_manager import FileManager
+from flight_manager.utils import validate_checklist_rule
 from flight_manager.ui.calendar import CalendarDialog
 from flight_manager.ui.dialogs import (
     ChecklistSettingsDialog,
@@ -762,7 +763,7 @@ class FlightManagerApp:
             widget.destroy()
         self.dynamic_widgets = {}
 
-        for name, itype, options, _, _ in self.db.get_checklist_items():
+        for name, itype, options, rule, _, _ in self.db.get_checklist_items():
             frame = ttk.Frame(self.checklist_frame)
             frame.pack(fill=tk.X, pady=2, padx=5)
 
@@ -770,7 +771,7 @@ class FlightManagerApp:
                 ttk.Label(frame, text=f"{name}:", width=20).pack(side=tk.LEFT)
                 entry = ttk.Entry(frame)
                 entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
-                self.dynamic_widgets[name] = {"type": "text", "var": entry}
+                self.dynamic_widgets[name] = {"type": "text", "var": entry, "rule": rule}
             elif itype == "single_select":
                 ttk.Label(frame, text=f"{name}:", width=20).pack(side=tk.LEFT)
                 vals = (
@@ -783,12 +784,13 @@ class FlightManagerApp:
                 self.dynamic_widgets[name] = {
                     "type": "single_select",
                     "var": combo,
+                    "rule": rule,
                 }
             else:
                 var = tk.BooleanVar()
                 chk = ttk.Checkbutton(frame, text=name, variable=var)
                 chk.pack(side=tk.LEFT)
-                self.dynamic_widgets[name] = {"type": "checkbox", "var": var}
+                self.dynamic_widgets[name] = {"type": "checkbox", "var": var, "rule": rule}
 
     def refresh_vehicle_ui(self):
         """Refreshes the vehicle comboboxes."""
@@ -859,15 +861,23 @@ class FlightManagerApp:
                 )
                 return
 
-        # Prepare Checklist JSON
+        # Prepare Checklist JSON and Validate Rules
         checklist_data = []
         for name, data in self.dynamic_widgets.items():
             item_type = data["type"]
+            rule = data.get("rule")
             val = None
             if item_type == "checkbox":
                 val = data["var"].get()  # Boolean
             else:
                 val = data["var"].get().strip()  # String
+
+            # Rule Validation
+            if rule:
+                is_valid, err_msg = validate_checklist_rule(val, rule)
+                if not is_valid:
+                    messagebox.showwarning("Validation Error", f"Checklist item '{name}': {err_msg}")
+                    return
 
             checklist_data.append(
                 {"name": name, "type": item_type, "value": val}
