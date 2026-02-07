@@ -102,7 +102,6 @@ class FlightManagerApp:
         self.sort_desc = False
 
         # Multi-Column Filter Vars
-        self.filter_id = tk.StringVar()
         self.log_date_var = tk.StringVar(
             value=datetime.date.today().strftime("%Y-%m-%d")
         )
@@ -112,8 +111,6 @@ class FlightManagerApp:
         self.filter_vehicle = tk.StringVar(value="All")
 
         # Pagination & Debounce State
-        self.page = 0
-        self.page_size = 50
         self._debounce_timer = None
 
         # Create Menu Bar
@@ -160,46 +157,46 @@ class FlightManagerApp:
             self.filter_date.set(datetime.date.today().strftime("%Y-%m-%d"))
 
     def apply_font_size(self, size: int):
-        """Applies a global font size to the application.
+        """Applies a global font size to the application using named fonts.
 
         Args:
             size: The font size to apply.
         """
         from tkinter import font
 
-        # Update default fonts
+        # Update standard named fonts - this automatically updates most widgets
         for font_name in (
             "TkDefaultFont",
             "TkTextFont",
             "TkMenuFont",
             "TkHeadingFont",
+            "TkCaptionFont",
+            "TkSmallCaptionFont",
         ):
             f = font.nametofont(font_name)
             f.configure(size=size)
 
+        # Update specific fonts used in the app
+        main_font_family = "Segoe UI" if sys.platform == "win32" else "Helvetica"
+        mono_font_family = "Consolas" if sys.platform == "win32" else "Courier"
+
+        # Ensure our custom fonts exist and are updated
+        try:
+            custom_main = font.Font(name="AppMainFont", family=main_font_family, size=size)
+        except tk.TclError:
+            custom_main = font.nametofont("AppMainFont")
+            custom_main.configure(size=size)
+
+        try:
+            custom_mono = font.Font(name="AppMonoFont", family=mono_font_family, size=size)
+        except tk.TclError:
+            custom_mono = font.nametofont("AppMonoFont")
+            custom_mono.configure(size=size)
+
         # Update TTK Styles
         style = ttk.Style()
-        style.configure(".", font=("Segoe UI", size))
-        style.configure("Treeview.Heading", font=("Segoe UI", size, "bold"))
-
-        # Helper to update non-TTK widgets like ScrolledText
-        def update_widget_fonts(parent):
-            for child in parent.winfo_children():
-                if isinstance(child, scrolledtext.ScrolledText):
-                    # Check if it's using Consolas (for comparison) or Segoe UI
-                    current_font = child.cget("font")
-                    if "Consolas" in str(current_font):
-                        child.configure(font=("Consolas", size))
-                        # Also update tags in ComparisonDialog if it's that one
-                        try:
-                            child.tag_config("head", font=("Consolas", size, "bold"))
-                        except Exception:
-                            pass
-                    else:
-                        child.configure(font=("Segoe UI", size))
-                update_widget_fonts(child)
-
-        update_widget_fonts(self.root)
+        style.configure(".", font=("AppMainFont", size))
+        style.configure("Treeview.Heading", font=("AppMainFont", size, "bold"))
 
     def open_preferences(self):
         """Opens the Preferences dialog."""
@@ -235,7 +232,7 @@ class FlightManagerApp:
         # Settings Menu
         settings_menu = tk.Menu(menubar, tearoff=0)
         settings_menu.add_command(
-            label="Preferences (Performance & UI)",
+            label="Preferences...",
             command=self.open_preferences,
         )
         settings_menu.add_separator()
@@ -354,7 +351,7 @@ class FlightManagerApp:
         main_pane.add(self.input_frame, minsize=520)
 
         # Date
-        ttk.Label(self.input_frame, text="Date (YYYY-MM-DD):").grid(
+        ttk.Label(self.input_frame, text="Date:").grid(
             row=0, column=0, sticky="w", pady=5
         )
         self.btn_date = ttk.Button(
@@ -388,7 +385,7 @@ class FlightManagerApp:
         self.entry_mission_title.grid(row=3, column=1, sticky="ew", pady=5)
 
         # Preflight Check
-        ttk.Label(self.input_frame, text="Preflight Check:").grid(
+        ttk.Label(self.input_frame, text="Preflight Check:  ").grid(
             row=4, column=0, sticky="nw", pady=5
         )
 
@@ -507,13 +504,6 @@ class FlightManagerApp:
         filter_frame = ttk.Frame(self.history_frame)
         filter_frame.pack(fill=tk.X, pady=(0, 5))
 
-        # ID Filter
-        ttk.Label(filter_frame, text="ID:").pack(side=tk.LEFT, padx=(0, 2))
-        self.entry_filter_id = ttk.Entry(
-            filter_frame, textvariable=self.filter_id, width=8
-        )
-        self.entry_filter_id.pack(side=tk.LEFT, padx=(0, 10))
-
         # Date Filter
         ttk.Label(filter_frame, text="Date:").pack(side=tk.LEFT, padx=(0, 2))
         ttk.Button(
@@ -551,9 +541,6 @@ class FlightManagerApp:
         self.combo_filter_vehicle.pack(side=tk.LEFT, padx=(0, 10))
 
         # Auto-refresh triggers
-        self.filter_id.trace(
-            "w", lambda name, index, mode: self.load_logs_debounced()
-        )
         self.filter_date.trace(
             "w", lambda name, index, mode: self.load_logs_debounced()
         )
@@ -564,31 +551,6 @@ class FlightManagerApp:
         ttk.Button(filter_frame, text="Reset", command=self.reset_filter).pack(
             side=tk.LEFT
         )
-
-        # Pagination Controls
-        self.pagination_frame = ttk.Frame(self.history_frame)
-        self.pagination_frame.pack(side=tk.BOTTOM, fill=tk.X, pady=2)
-
-        self.btn_prev_page = ttk.Button(
-            self.pagination_frame,
-            text="< Prev",
-            command=self.prev_page,
-            state="disabled",
-        )
-        self.btn_prev_page.pack(side=tk.LEFT, padx=5)
-
-        self.lbl_page_info = ttk.Label(
-            self.pagination_frame, text="Page 1 of 1"
-        )
-        self.lbl_page_info.pack(side=tk.LEFT, padx=5)
-
-        self.btn_next_page = ttk.Button(
-            self.pagination_frame,
-            text="Next >",
-            command=self.next_page,
-            state="disabled",
-        )
-        self.btn_next_page.pack(side=tk.LEFT, padx=5)
 
         # Treeview
         columns = ("id", "flight_no", "date", "vehicle", "mission", "note")
@@ -640,6 +602,24 @@ class FlightManagerApp:
         scrollbar_v.pack(side=tk.RIGHT, fill=tk.Y)
         scrollbar_h.pack(side=tk.BOTTOM, fill=tk.X)
         self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        # Mousewheel scrolling for Treeview (Localized)
+        def _on_tree_mousewheel(event):
+            # Vertical scroll
+            self.tree.yview_scroll(int(-1*(event.delta/120)) * 3, "units") # Faster (3 units)
+
+        def _on_tree_shift_mousewheel(event):
+            # Horizontal scroll
+            self.tree.xview_scroll(int(-1*(event.delta/120)) * 5, "units") # Even faster for horizontal (5 units)
+
+        self.tree.bind("<Enter>", lambda e: [
+            self.tree.bind_all("<MouseWheel>", _on_tree_mousewheel),
+            self.tree.bind_all("<Shift-MouseWheel>", _on_tree_shift_mousewheel)
+        ])
+        self.tree.bind("<Leave>", lambda e: [
+            self.tree.unbind_all("<MouseWheel>"),
+            self.tree.unbind_all("<Shift-MouseWheel>")
+        ])
 
         self.tree.bind("<Double-1>", self.on_history_double_click)
         self.tree.bind("<Button-3>", self.show_context_menu)
@@ -789,12 +769,14 @@ class FlightManagerApp:
         )
 
     def refresh_checklist_ui(self):
-        """Refreshes the dynamic checklist UI based on database config."""
+        """Refreshes the dynamic checklist UI efficiently."""
+        items = self.db.get_checklist_items()
+
         for widget in self.checklist_frame.winfo_children():
             widget.destroy()
         self.dynamic_widgets = {}
 
-        for name, itype, options, rule, _, _ in self.db.get_checklist_items():
+        for name, itype, options, rule, _, _ in items:
             frame = ttk.Frame(self.checklist_frame)
             frame.pack(fill=tk.X, pady=2, padx=5)
 
@@ -805,55 +787,45 @@ class FlightManagerApp:
                 ttk.Label(frame, text=f"{name}:", width=15).pack(side=tk.LEFT)
                 entry = ttk.Entry(frame, width=15)
                 entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
-                entry.bind(
-                    "<KeyRelease>", lambda e, n=name: self.validate_item(n)
-                )
+                entry.bind("<KeyRelease>", lambda e, n=name: self.validate_item(n))
                 self.dynamic_widgets[name] = {
-                    "type": "text",
-                    "var": entry,
-                    "rule": rule,
-                    "status": status_label,
-                    "value": None # to be filled
+                    "type": "text", "var": entry, "rule": rule,
+                    "status": status_label, "value": None
                 }
             elif itype == "single_select":
                 ttk.Label(frame, text=f"{name}:", width=15).pack(side=tk.LEFT)
-                vals = (
-                    [opt.strip() for opt in options.split(",")]
-                    if options
-                    else []
-                )
+                vals = [opt.strip() for opt in options.split(",")] if options else []
                 combo = ttk.Combobox(frame, values=vals, state="readonly", width=15)
                 combo.pack(side=tk.LEFT, fill=tk.X, expand=True)
-                combo.bind(
-                    "<<ComboboxSelected>>",
-                    lambda e, n=name: self.validate_item(n),
-                )
+                combo.bind("<<ComboboxSelected>>", lambda e, n=name: self.validate_item(n))
                 self.dynamic_widgets[name] = {
-                    "type": "single_select",
-                    "var": combo,
-                    "rule": rule,
-                    "status": status_label,
-                    "value": None
+                    "type": "single_select", "var": combo, "rule": rule,
+                    "status": status_label, "value": None
                 }
             else:
                 var = tk.BooleanVar()
                 chk = ttk.Checkbutton(
-                    frame,
-                    text=name,
-                    variable=var,
-                    command=lambda n=name: self.validate_item(n),
+                    frame, text=name, variable=var,
+                    command=lambda n=name: self.validate_item(n)
                 )
                 chk.pack(side=tk.LEFT)
                 self.dynamic_widgets[name] = {
-                    "type": "checkbox",
-                    "var": var,
-                    "rule": rule,
-                    "status": status_label,
-                    "value": None
+                    "type": "checkbox", "var": var, "rule": rule,
+                    "status": status_label, "value": None
                 }
 
-            # Initial validation
             self.validate_item(name)
+
+        # Ensure scroll region is updated and add localized mousewheel support
+        self.checklist_frame.update_idletasks()
+        self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+
+        def _on_mousewheel(event):
+            self.canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+
+        # Localized binding: only scrolls when mouse is over the checklist area
+        self.checklist_frame.bind("<Enter>", lambda e: self.canvas.bind_all("<MouseWheel>", _on_mousewheel))
+        self.checklist_frame.bind("<Leave>", lambda e: self.canvas.unbind_all("<MouseWheel>"))
 
     def validate_item(self, name: str):
         """Validates a single checklist item and updates its status label."""
@@ -1023,77 +995,34 @@ class FlightManagerApp:
         if self._debounce_timer:
             self.root.after_cancel(self._debounce_timer)
         self._debounce_timer = self.root.after(
-            300, lambda: self.load_logs(reset_page=True)
+            100, lambda: self.load_logs(reset_page=True)
         )
 
-    def prev_page(self):
-        """Navigates to the previous page of logs."""
-        if self.page > 0:
-            self.page -= 1
-            self.load_logs(reset_page=False)
-
-    def next_page(self):
-        """Navigates to the next page of logs."""
-        self.page += 1
-        self.load_logs(reset_page=False)
-
     def load_logs(self, reset_page: bool = False):
-        """Loads flight logs from the database into the treeview asynchronously.
-
-        Args:
-            reset_page: Whether to reset pagination to the first page.
-        """
-        if reset_page:
-            self.page = 0
-
-        filter_id = self.filter_id.get().strip()
+        """Loads all matching flight logs from the database into the treeview asynchronously."""
         filter_date = self.filter_date.get().strip()
         filter_vehicle = self.filter_vehicle.get()
 
-        # Show loading cursor
-        self.root.config(cursor="watch")
-
         def _async_fetch():
             try:
-                # Get total count for pagination
-                total_count = self.db.get_logs_count(
-                    filter_id, filter_date, filter_vehicle
-                )
-                total_pages = math.ceil(total_count / self.page_size) if total_count > 0 else 1
-
-                # Adjust page if out of bounds
-                page = self.page
-                if page >= total_pages:
-                    page = total_pages - 1
-                if page < 0:
-                    page = 0
-
-                offset = page * self.page_size
-
-                # Fetch the actual rows
+                # Fetch all matching rows (no limit/offset)
                 rows = self.db.get_logs(
-                    filter_id,
+                    None, # filter_id removed
                     filter_date,
                     filter_vehicle,
                     self.sort_col,
-                    self.sort_desc,
-                    self.page_size,
-                    offset,
+                    self.sort_desc
                 )
 
                 # Update UI on the main thread
-                self.root.after(0, lambda: self._finalize_load_logs(rows, total_count, total_pages, page))
+                self.root.after(0, lambda: self._finalize_load_logs(rows))
             except Exception as e:
                 self.root.after(0, lambda: messagebox.showerror("Database Error", f"Failed to load logs: {e}"))
-            finally:
-                self.root.after(0, lambda: self.root.config(cursor=""))
 
         threading.Thread(target=_async_fetch, daemon=True).start()
 
-    def _finalize_load_logs(self, rows, total_count, total_pages, page):
+    def _finalize_load_logs(self, rows):
         """Updates the UI with the fetched logs. Must be called on the main thread."""
-        self.page = page
-
         # Efficiently clear the Treeview
         self.tree.delete(*self.tree.get_children())
 
@@ -1117,18 +1046,6 @@ class FlightManagerApp:
                 (row[8] or "").replace("\n", " ")
             ]
             self.tree.insert("", tk.END, values=display_data)
-
-        # Update Pagination UI
-        self.lbl_page_info.config(
-            text=f"Page {self.page + 1} of {total_pages} (Total: {total_count})"
-        )
-
-        self.btn_prev_page.state(
-            ["!disabled"] if self.page > 0 else ["disabled"]
-        )
-        self.btn_next_page.state(
-            ["!disabled"] if self.page < total_pages - 1 else ["disabled"]
-        )
 
     def clear_form(self):
         """Clears all input fields in the log entry form."""

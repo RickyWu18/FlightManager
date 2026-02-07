@@ -95,4 +95,5 @@ class LogService:
             "system_check": system_check_json,
             "parameter_changes": param_content,
             "log_file_path": log_file_path,
+            "is_locked": 0,
         }

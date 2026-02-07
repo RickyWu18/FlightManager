@@ -30,27 +30,45 @@ class BaseSettingsDialog(tk.Toplevel):
         super().__init__(parent)
         self.title(title)
 
+        # Configure fonts to inherit from named fonts defined in main_window
+        # This ensures consistency across all dialogs
+        self.option_add("*Font", "AppMainFont")
+
         # Center the window relative to parent
-        try:
-            width, height = map(int, geometry.split("x"))
-            parent.update_idletasks()
-            x = (
-                parent.winfo_rootx()
-                + (parent.winfo_width() // 2)
-                - (width // 2)
-            )
-            y = (
-                parent.winfo_rooty()
-                + (parent.winfo_height() // 2)
-                - (height // 2)
-            )
-            self.geometry(f"{geometry}+{x}+{y}")
-        except ValueError:
-            # Fallback if geometry string is complex or invalid
-            self.geometry(geometry)
+        self.center_window(parent, geometry)
 
         self.transient(parent)
         self.grab_set()
+        self.lift()
+        self.focus_force()
+
+    def center_window(self, parent: tk.Widget, geometry: str):
+        """Centers the window relative to its parent."""
+        try:
+            # Parse width and height from geometry string (e.g., "400x500")
+            # Handle cases with offsets if they exist (e.g., "400x500+10+10")
+            base_geo = geometry.split("+")[0]
+            width, height = map(int, base_geo.split("x"))
+
+            parent.update_idletasks()
+
+            # Use rootx/rooty for absolute screen positioning
+            px = parent.winfo_rootx()
+            py = parent.winfo_rooty()
+            pw = parent.winfo_width()
+            ph = parent.winfo_height()
+
+            x = px + (pw // 2) - (width // 2)
+            y = py + (ph // 2) - (height // 2)
+
+            # Ensure window is not off-screen (especially on multi-monitor)
+            x = max(0, x)
+            y = max(0, y)
+
+            self.geometry(f"{width}x{height}+{x}+{y}")
+        except Exception:
+            # Fallback to requested geometry if centering fails
+            self.geometry(geometry)
 
     def _create_scrolled_list(self, parent, list_height=10):
         """Creates a Frame containing a Listbox, Scrollbar, and Sidebar Button Frame."""
@@ -82,7 +100,7 @@ class BaseSettingsDialog(tk.Toplevel):
         tree.configure(yscroll=sb.set)
 
         tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        sb.pack(side=tk.RIGHT, fill=tk.Y)
+        sb.pack(side=tk.LEFT, fill=tk.Y)
 
         btn_frame = ttk.Frame(container, padding=(10, 0))
         btn_frame.pack(side=tk.RIGHT, fill=tk.Y)
@@ -91,7 +109,7 @@ class BaseSettingsDialog(tk.Toplevel):
 
 
 class PreferencesDialog(BaseSettingsDialog):
-    """Dialog for managing application preferences (Performance/UI)."""
+    """Dialog for managing application preferences and performance settings."""
 
     def __init__(
         self,
@@ -106,26 +124,50 @@ class PreferencesDialog(BaseSettingsDialog):
             db_manager: The database manager instance.
             on_save_callback: Optional callback when settings are saved.
         """
-        super().__init__(parent, "Performance & UI Settings", "400x500")
+        super().__init__(parent, "Performance", "550x500")
         self.db = db_manager
         self.on_save_callback = on_save_callback
 
-        content_frame = ttk.Frame(self, padding=20)
-        content_frame.pack(fill=tk.BOTH, expand=True)
+        # Ensure Notebook tabs and buttons use the correct font
+        style = ttk.Style()
+        style.configure("TNotebook.Tab", font=("Segoe UI", 11))
+        style.configure("Settings.TButton", font=("Segoe UI", 11))
 
-        # Font Size
-        ttk.Label(content_frame, text="Global Font Size:", font=("Segoe UI", 11)).pack(anchor="w", pady=(0, 5))
+        self.notebook = ttk.Notebook(self)
+        self.notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=(10, 5))
 
+        self.create_general_tab()
+        self.create_data_tab()
+
+        btn_frame = ttk.Frame(self, padding=10)
+        btn_frame.pack(fill=tk.X, side=tk.BOTTOM)
+
+        ttk.Button(btn_frame, text="Save", command=self.save_settings, style="Settings.TButton").pack(side=tk.RIGHT, padx=5)
+        ttk.Button(btn_frame, text="Apply", command=self.apply_settings, style="Settings.TButton").pack(side=tk.RIGHT, padx=5)
+        ttk.Button(btn_frame, text="Cancel", command=self.destroy, style="Settings.TButton").pack(side=tk.RIGHT, padx=5)
+
+        ttk.Label(btn_frame, text="Note: Restart may be required.", font=("Segoe UI", 9), foreground="gray").pack(side=tk.LEFT, padx=5)
+
+    def create_general_tab(self):
+        """Creates the General Settings tab."""
+        tab = ttk.Frame(self.notebook, padding=20)
+        self.notebook.add(tab, text="General")
+
+        ttk.Label(tab, text="Font Size:", font=("Segoe UI", 11, "bold")).pack(anchor="w", pady=(0, 5))
         current_size = int(self.db.get_setting("font_size", 10))
         self.size_var = tk.IntVar(value=current_size)
-        self.spin = ttk.Spinbox(content_frame, from_=8, to_=24, textvariable=self.size_var, width=10, font=("Segoe UI", 11))
-        self.spin.pack(anchor="w", pady=(0, 10))
 
-        ttk.Separator(content_frame, orient="horizontal").pack(fill=tk.X, pady=10)
+        f_frame = ttk.Frame(tab)
+        f_frame.pack(fill=tk.X, pady=(0, 15))
+        ttk.Spinbox(f_frame, from_=8, to_=24, textvariable=self.size_var, width=10, font=("Segoe UI", 11)).pack(side=tk.LEFT)
+        ttk.Label(f_frame, text="pts", font=("Segoe UI", 11)).pack(side=tk.LEFT, padx=5)
 
-        # Feature Permissions
-        ttk.Label(content_frame, text="Feature Permissions:", font=("Segoe UI", 11, "bold")).pack(anchor="w", pady=(0, 5))
+    def create_data_tab(self):
+        """Creates the Data & Permissions tab."""
+        tab = ttk.Frame(self.notebook, padding=20)
+        self.notebook.add(tab, text="Log Data")
 
+        ttk.Label(tab, text="Edit Permissions:", font=("Segoe UI", 11, "bold")).pack(anchor="w", pady=(0, 5))
         self.vars = {}
         features = [
             ("enable_edit_log", "Enable Edit Log Info"),
@@ -134,62 +176,50 @@ class PreferencesDialog(BaseSettingsDialog):
             ("enable_update_log_file", "Enable Update Log File"),
         ]
 
+        # Style for checkbuttons to ensure font consistency
+        style = ttk.Style()
+        style.configure("Settings.TCheckbutton", font=("Segoe UI", 11))
+
         for key, label in features:
             var = tk.BooleanVar(value=self.db.get_setting(key, "1") == "1")
-            chk = ttk.Checkbutton(content_frame, text=label, variable=var)
-            chk.pack(anchor="w", pady=2)
+            ttk.Checkbutton(tab, text=label, variable=var, style="Settings.TCheckbutton").pack(anchor="w", pady=2)
             self.vars[key] = var
 
-        ttk.Separator(content_frame, orient="horizontal").pack(fill=tk.X, pady=10)
+        ttk.Separator(tab, orient="horizontal").pack(fill=tk.X, pady=15)
 
-        # Log Storage Management
-        ttk.Label(content_frame, text="Log Storage Management:", font=("Segoe UI", 11, "bold")).pack(anchor="w", pady=(0, 5))
-
-        # Max Size
-        ttk.Label(content_frame, text="Max Log Folder Size (GB, 0=Unlimited):").pack(anchor="w")
+        ttk.Label(tab, text="Log Storage Management:", font=("Segoe UI", 11, "bold")).pack(anchor="w", pady=(0, 5))
+        ttk.Label(tab, text="Max Log Folder Size (GB, 0=Unlimited):", font=("Segoe UI", 11)).pack(anchor="w")
         current_max_size = float(self.db.get_setting("log_max_size_gb", "0"))
         self.max_size_var = tk.DoubleVar(value=current_max_size)
-        self.spin_max_size = ttk.Spinbox(content_frame, from_=0, to_=9999, increment=0.1, textvariable=self.max_size_var, width=10)
-        self.spin_max_size.pack(anchor="w", pady=(0, 5))
+        ttk.Spinbox(tab, from_=0, to_=9999, increment=0.1, textvariable=self.max_size_var, width=10, font=("Segoe UI", 11)).pack(anchor="w", pady=(0, 10))
 
-        # Retention
-        ttk.Label(content_frame, text="Retention Period (Days, 0=Unlimited):").pack(anchor="w")
+        ttk.Label(tab, text="Retention Period (Days, 0=Unlimited):", font=("Segoe UI", 11)).pack(anchor="w")
         current_retention = int(self.db.get_setting("log_retention_days", "0"))
         self.retention_var = tk.IntVar(value=current_retention)
-        self.spin_retention = ttk.Spinbox(content_frame, from_=0, to_=9999, textvariable=self.retention_var, width=10)
-        self.spin_retention.pack(anchor="w", pady=(0, 5))
-
-        btn_frame = ttk.Frame(content_frame)
-        btn_frame.pack(fill=tk.X, pady=20)
-
-        ttk.Button(btn_frame, text="Save", command=self.save_settings).pack(side=tk.LEFT, padx=5)
-        ttk.Button(btn_frame, text="Apply", command=self.apply_settings).pack(side=tk.LEFT, padx=5)
-
-        ttk.Label(content_frame, text="Note: Some changes may require app restart for full effect.", font=("Segoe UI", 8), foreground="gray").pack(pady=10)
+        ttk.Spinbox(tab, from_=0, to_=9999, textvariable=self.retention_var, width=10, font=("Segoe UI", 11)).pack(anchor="w", pady=(0, 5))
 
     def apply_settings(self):
         """Applies the current settings via callback without saving to DB."""
-        new_size = self.size_var.get()
         if self.on_save_callback:
-            self.on_save_callback(new_size)
+            self.on_save_callback(self.size_var.get())
 
     def save_settings(self):
         """Saves the settings to the database and triggers callback."""
         new_size = self.size_var.get()
         self.db.set_setting("font_size", new_size)
-
         for key, var in self.vars.items():
             self.db.set_setting(key, "1" if var.get() else "0")
-
-        # Save Storage Settings
         self.db.set_setting("log_max_size_gb", str(self.max_size_var.get()))
         self.db.set_setting("log_retention_days", str(self.retention_var.get()))
+        self.db.set_setting("max_history_items", str(self.max_items_var.get()))
 
         if self.on_save_callback:
             self.on_save_callback(new_size)
 
         messagebox.showinfo("Success", "Settings saved successfully.")
         self.destroy()
+
+
 
 
 class IgnoreSettingsDialog(BaseSettingsDialog):
@@ -207,10 +237,6 @@ class IgnoreSettingsDialog(BaseSettingsDialog):
 
         content_frame = ttk.Frame(self, padding=10)
         content_frame.pack(fill=tk.BOTH, expand=True)
-
-        ttk.Label(
-            content_frame, text="Patterns (Unix Wildcards e.g., *STAT*, PID_*)"
-        ).pack(anchor="w", pady=(0, 5))
 
         # --- Top Section: List + Right Actions ---
         self.lb, side_btn_frame = self._create_scrolled_list(content_frame)
@@ -234,6 +260,8 @@ class IgnoreSettingsDialog(BaseSettingsDialog):
         ttk.Button(
             add_frame, text="Add Pattern", command=self.add_item, width=15
         ).grid(row=0, column=1, sticky="e", ipady=1)
+
+        self.entry_new.focus_set()
 
     def load_list(self):
         """Loads ignore patterns from the database into the listbox."""
@@ -284,11 +312,6 @@ class VehicleSettingsDialog(BaseSettingsDialog):
         content_frame = ttk.Frame(self, padding=10)
         content_frame.pack(fill=tk.BOTH, expand=True)
 
-        # --- Top Section: List + Right Actions ---
-        ttk.Label(content_frame, text="Current Vehicles:").pack(
-            anchor="w", pady=(0, 5)
-        )
-
         self.lb, side_btn_frame = self._create_scrolled_list(content_frame)
 
         ttk.Button(
@@ -314,6 +337,7 @@ class VehicleSettingsDialog(BaseSettingsDialog):
             add_frame, text="Add Vehicle", command=self.add_item, width=15
         ).grid(row=0, column=1, sticky="e", ipady=1)
 
+        self.entry_new.focus_set()
         self.protocol("WM_DELETE_WINDOW", self.on_close)
 
     def load_list(self):
@@ -476,6 +500,8 @@ class ChecklistSettingsDialog(BaseSettingsDialog):
         ttk.Button(ctrl_frame, text="Add Item", command=self.add_item).pack(
             pady=(10, 0), anchor="e"
         )
+
+        self.entry_new.focus_set()
 
     def toggle_options(self, event=None):
         """Toggles the visibility of the options entry."""
@@ -704,6 +730,7 @@ class LogEditDialog(BaseSettingsDialog):
             self.log_path,
             self.mission,
             self.note,
+            self.is_locked,
         ) = row
 
         self.dynamic_widgets = {}
@@ -804,6 +831,7 @@ class LogEditDialog(BaseSettingsDialog):
                 is_checked = val is True or str(val).lower() == "true"
                 var = tk.BooleanVar(value=is_checked)
                 chk = ttk.Checkbutton(f, text=name, variable=var)
+                chk.state(["!alternate"])  # Ensure it doesn't show solid block
                 chk.pack(side=tk.LEFT)
                 self.dynamic_widgets[name] = {"type": "checkbox", "var": var}
 
@@ -867,6 +895,7 @@ class LogEditDialog(BaseSettingsDialog):
             "system_check": system_check_json,
             "parameter_changes": self.param_content,
             "log_file_path": self.log_path,
+            "is_locked": self.is_locked
         }
 
         try:
@@ -1168,9 +1197,9 @@ class FlightDetailsDialog(tk.Toplevel):
             else:
                 is_checked = val is True or str(val).lower() == "true"
                 var = tk.BooleanVar(value=is_checked)
-                chk = ttk.Checkbutton(
-                    f, text=name, variable=var, state="disabled"
-                )
+                chk = ttk.Checkbutton(f, text=name, variable=var)
+                chk.state(["disabled", "!alternate"])  # Clear indeterminate state
+                chk.var = var  # Keep reference alive
                 chk.pack(side=tk.LEFT)
 
         param_frame = ttk.LabelFrame(self.container, text="Parameter Data", padding=10)
@@ -1264,7 +1293,8 @@ class FlightDetailsDialog(tk.Toplevel):
                     "parameter_changes": new_content,
                     "log_file_path": row[5],
                     "mission_title": row[6],
-                    "note": row[7]
+                    "note": row[7],
+                    "is_locked": row[8]
                 }
 
                 self.db.update_log(self.log_id, log_data)
@@ -1301,7 +1331,8 @@ class FlightDetailsDialog(tk.Toplevel):
                     "parameter_changes": row[4],
                     "log_file_path": new_path,
                     "mission_title": row[6],
-                    "note": row[7]
+                    "note": row[7],
+                    "is_locked": row[8]
                 }
 
                 self.db.update_log(self.log_id, log_data)

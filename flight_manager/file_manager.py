@@ -78,12 +78,17 @@ class FileManager:
         if not os.path.exists(self.base_dir):
             return 0
 
-        excluded_paths = [os.path.abspath(p) for p in (excluded_paths or [])]
+        excluded_paths = {os.path.abspath(p) for p in (excluded_paths or [])}
         deleted_count = 0
         files = []
 
-        # 1. Gather file info
-        for f in os.listdir(self.base_dir):
+        # 1. Gather file info with error handling
+        try:
+            dir_list = os.listdir(self.base_dir)
+        except OSError:
+            return 0
+
+        for f in dir_list:
             full_path = os.path.abspath(os.path.join(self.base_dir, f))
             if os.path.isfile(full_path):
                 if full_path in excluded_paths:
@@ -97,7 +102,19 @@ class FileManager:
                         "mtime": stats.st_mtime
                     })
                 except OSError:
+                    # Skip files that are inaccessible or locked during stat
                     continue
+
+        def try_remove(file_info):
+            nonlocal deleted_count
+            try:
+                # On Windows, this will fail if the file is opened by another process
+                os.remove(file_info["path"])
+                deleted_count += 1
+                return True
+            except (PermissionError, OSError):
+                # File might be locked or permission denied
+                return False
 
         # 2. Date-based Cleanup
         if retention_days > 0:
@@ -107,25 +124,19 @@ class FileManager:
             for file_info in files:
                 should_delete = False
                 
-                # Try to parse date from filename first (YYYY-MM-DD_...)
-                # format: new_filename = f"{safe_date}_{safe_vehicle}_{safe_id}_{safe_orig}"
                 try:
                     date_part = file_info["name"].split("_")[0]
                     file_date = datetime.datetime.strptime(date_part, "%Y-%m-%d").date()
                     if file_date < cutoff_date:
                         should_delete = True
                 except (ValueError, IndexError):
-                    # Fallback to modification time
                     file_date = datetime.date.fromtimestamp(file_info["mtime"])
                     if file_date < cutoff_date:
                         should_delete = True
 
                 if should_delete:
-                    try:
-                        os.remove(file_info["path"])
-                        deleted_count += 1
-                    except OSError:
-                        remaining_files.append(file_info) # Failed to delete, keep in list
+                    if not try_remove(file_info):
+                        remaining_files.append(file_info)
                 else:
                     remaining_files.append(file_info)
             
@@ -144,11 +155,7 @@ class FileManager:
                     if total_size <= max_size_bytes:
                         break
                     
-                    try:
-                        os.remove(file_info["path"])
-                        deleted_count += 1
+                    if try_remove(file_info):
                         total_size -= file_info["size"]
-                    except OSError:
-                        pass # Skip if cannot delete
 
         return deleted_count

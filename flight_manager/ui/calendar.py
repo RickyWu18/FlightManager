@@ -31,7 +31,7 @@ class CalendarDialog(tk.Toplevel):
         super().__init__(parent)
         self.callback = callback
         self.title("Select Date")
-        self.geometry("300x250")
+        self.geometry("400x350")
         self.transient(parent)
 
         # Position relative to widget if provided

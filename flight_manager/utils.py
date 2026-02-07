@@ -124,7 +124,7 @@ def validate_checklist_rule(value: Any, rule_str: str) -> Tuple[bool, str]:
 def parse_params(content: str) -> Dict[str, str]:
     """Parses a string content into a dictionary of parameters.
 
-    Supports '=' and ',' delimiters. Ignores lines starting with # or //.
+    Supports '=', ',' and whitespace delimiters. Ignores comments starting with # or //.
 
     Args:
         content: The string content of the parameter file.
@@ -137,22 +137,31 @@ def parse_params(content: str) -> Dict[str, str]:
         return params
 
     for line in content.splitlines():
+        # Handle comments (including inline)
+        if "#" in line:
+            line = line.split("#", 1)[0]
+        if "//" in line:
+            line = line.split("//", 1)[0]
+            
         line = line.strip()
-        if not line or line.startswith("#") or line.startswith("//"):
+        if not line:
             continue
 
+        # Try delimiters in order of precedence
         parts = []
-        if "=" in line:
-            parts = line.split("=", 1)
-        elif "," in line:
-            parts = line.split(",", 1)
+        for sep in ("=", ","):
+            if sep in line:
+                parts = line.split(sep, 1)
+                break
         else:
+            # Fallback to whitespace split
             parts = line.split(None, 1)
 
         if len(parts) == 2:
             key = parts[0].strip()
             val = parts[1].strip()
-            params[key] = val
+            if key:
+                params[key] = val
     return params
 
 
@@ -160,6 +169,8 @@ def filter_params(
     params: Dict[str, str], ignore_patterns: Optional[List[str]]
 ) -> Dict[str, str]:
     """Filters a dictionary of parameters based on a list of glob patterns.
+
+    Uses pre-compiled regex for high performance with large datasets.
 
     Args:
         params: The dictionary of parameters to filter.
@@ -172,16 +183,20 @@ def filter_params(
     if not ignore_patterns:
         return params
 
-    filtered = {}
-    for key, value in params.items():
-        ignored = False
-        for pat in ignore_patterns:
-            if fnmatch.fnmatch(key, pat):
-                ignored = True
-                break
-        if not ignored:
-            filtered[key] = value
-    return filtered
+    import re
+    # Convert glob patterns to a single optimized regex
+    try:
+        regex_str = "|".join(f"(?:{fnmatch.translate(p)})" for p in ignore_patterns)
+        pattern = re.compile(regex_str)
+    except Exception:
+        # Fallback to individual glob matching if regex compilation fails
+        filtered = {}
+        for k, v in params.items():
+            if not any(fnmatch.fnmatch(k, p) for p in ignore_patterns):
+                filtered[k] = v
+        return filtered
+
+    return {k: v for k, v in params.items() if not pattern.match(k)}
 
 
 def compare_params(
