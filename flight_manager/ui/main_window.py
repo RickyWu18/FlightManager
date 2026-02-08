@@ -6,33 +6,25 @@ flight log display, and interaction with the database and file system.
 
 import datetime
 import json
-import math
 import os
+import sqlite3
 import sys
 import threading
 import tkinter as tk
-from tkinter import filedialog, messagebox, scrolledtext, ttk
+from tkinter import filedialog, font, messagebox, scrolledtext, ttk
 from typing import Any, Dict, Optional
 
+from flight_manager import database
+from flight_manager import file_manager
+from flight_manager import services
+from flight_manager import utils
 from flight_manager import version
-from flight_manager.database import DatabaseManager
-from flight_manager.file_manager import FileManager
-from flight_manager.services import LogService
-from flight_manager.utils import validate_checklist_rule
-from flight_manager.ui.calendar import CalendarDialog
-from flight_manager.ui.dialogs import (
-    ChecklistSettingsDialog,
-    ComparisonDialog,
-    FlightDetailsDialog,
-    IgnoreSettingsDialog,
-    LogEditDialog,
-    PreferencesDialog,
-    VehicleSettingsDialog,
-)
+from flight_manager.ui import calendar
+from flight_manager.ui import dialogs
 
 
 def get_resource_path(relative_path: str) -> str:
-    """Gets the absolute path to a resource, supporting both dev and PyInstaller.
+    """Gets the absolute path to a resource.
 
     Args:
         relative_path: The relative path to the resource.
@@ -42,8 +34,9 @@ def get_resource_path(relative_path: str) -> str:
     """
     try:
         # PyInstaller creates a temp folder and stores path in _MEIPASS
+        # pylint: disable=protected-access
         base_path = sys._MEIPASS
-    except Exception:
+    except (AttributeError, KeyError):
         base_path = os.path.abspath(".")
 
     return os.path.join(base_path, relative_path)
@@ -69,12 +62,12 @@ class FlightManagerApp:
             try:
                 self.icon_img = tk.PhotoImage(file=icon_path)
                 self.root.iconphoto(True, self.icon_img)
-            except Exception:
+            except tk.TclError:
                 pass
 
         # Database Setup
-        self.db = DatabaseManager()
-        self.file_manager = FileManager()
+        self.db = database.DatabaseManager()
+        self.file_manager = file_manager.FileManager()
 
         # Run Log Cleanup (Async)
         try:
@@ -87,8 +80,8 @@ class FlightManagerApp:
                     args=(max_size, retention, excluded),
                     daemon=True
                 ).start()
-        except Exception:
-            pass # Fail silently on startup cleanup
+        except (ValueError, sqlite3.Error):
+            pass  # Fail silently on startup cleanup
 
         # Set Window Close Handler
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
@@ -113,6 +106,9 @@ class FlightManagerApp:
         # Pagination & Debounce State
         self._debounce_timer = None
 
+        # State defined in refresh_checklist_ui
+        self.dynamic_widgets = {}
+
         # Create Menu Bar
         self.create_menu()
 
@@ -131,7 +127,7 @@ class FlightManagerApp:
                 excluded = self.db.get_locked_log_paths()
                 # Perform cleanup synchronously before exit
                 self.file_manager.cleanup_logs(max_size, retention, excluded)
-        except Exception:
+        except (ValueError, sqlite3.Error, OSError):
             pass
         self.root.destroy()
 
@@ -162,9 +158,7 @@ class FlightManagerApp:
         Args:
             size: The font size to apply.
         """
-        from tkinter import font
-
-        # Update standard named fonts - this automatically updates most widgets
+        # Update standard named fonts
         for font_name in (
             "TkDefaultFont",
             "TkTextFont",
@@ -177,18 +171,23 @@ class FlightManagerApp:
             f.configure(size=size)
 
         # Update specific fonts used in the app
-        main_font_family = "Segoe UI" if sys.platform == "win32" else "Helvetica"
-        mono_font_family = "Consolas" if sys.platform == "win32" else "Courier"
+        is_win = sys.platform == "win32"
+        main_font_family = "Segoe UI" if is_win else "Helvetica"
+        mono_font_family = "Consolas" if is_win else "Courier"
 
         # Ensure our custom fonts exist and are updated
         try:
-            custom_main = font.Font(name="AppMainFont", family=main_font_family, size=size)
+            custom_main = font.Font(
+                name="AppMainFont", family=main_font_family, size=size
+            )
         except tk.TclError:
             custom_main = font.nametofont("AppMainFont")
             custom_main.configure(size=size)
 
         try:
-            custom_mono = font.Font(name="AppMonoFont", family=mono_font_family, size=size)
+            custom_mono = font.Font(
+                name="AppMonoFont", family=mono_font_family, size=size
+            )
         except tk.TclError:
             custom_mono = font.nametofont("AppMonoFont")
             custom_mono.configure(size=size)
@@ -200,7 +199,7 @@ class FlightManagerApp:
 
     def open_preferences(self):
         """Opens the Preferences dialog."""
-        PreferencesDialog(
+        dialogs.PreferencesDialog(
             self.root, self.db, on_save_callback=self.apply_font_size
         )
 
@@ -217,7 +216,7 @@ class FlightManagerApp:
             if var == self.log_date_var:
                 self.calculate_next_id()
 
-        CalendarDialog(self.root, on_date_selected, widget)
+        calendar.CalendarDialog(self.root, on_date_selected, widget)
 
     def create_menu(self):
         """Creates the application menu bar."""
@@ -257,15 +256,23 @@ class FlightManagerApp:
 
         # History Menu
         history_menu = tk.Menu(menubar, tearoff=0)
-        history_menu.add_command(label="Refresh History", command=self.load_logs)
-        history_menu.add_command(label="Clear Filters", command=self.reset_filter)
+        history_menu.add_command(
+            label="Refresh History", command=self.load_logs
+        )
+        history_menu.add_command(
+            label="Clear Filters", command=self.reset_filter
+        )
         history_menu.add_separator()
 
-        history_menu.add_command(label="Edit Selected Log", command=self.edit_selected_log)
+        history_menu.add_command(
+            label="Edit Selected Log", command=self.edit_selected_log
+        )
         if self.db.get_setting("enable_edit_log", "1") == "0":
             history_menu.entryconfig("Edit Selected Log", state="disabled")
 
-        history_menu.add_command(label="Delete Selected Log", command=self.delete_selected_log)
+        history_menu.add_command(
+            label="Delete Selected Log", command=self.delete_selected_log
+        )
         if self.db.get_setting("enable_delete_log", "1") == "0":
             history_menu.entryconfig("Delete Selected Log", state="disabled")
 
@@ -299,7 +306,7 @@ class FlightManagerApp:
             with open(filename, "w", encoding="utf-8") as f:
                 json.dump(settings, f, indent=4)
             messagebox.showinfo("Success", f"Settings exported to:\n{filename}")
-        except Exception as e:
+        except (sqlite3.Error, OSError) as e:
             messagebox.showerror(
                 "Export Error", f"Failed to export settings:\n{e}"
             )
@@ -312,14 +319,14 @@ class FlightManagerApp:
         if not filename:
             return
 
-        confirm = messagebox.askyesno(
-            "Confirm Import",
+        msg = (
             "This will merge the imported settings with your current "
             "configuration.\n\n"
             "Existing Vehicles, Checklist Items, and Ignore Patterns will be "
             "preserved if they exist, but new ones will be added.\n\n"
-            "Do you want to continue?",
+            "Do you want to continue?"
         )
+        confirm = messagebox.askyesno("Confirm Import", msg)
         if not confirm:
             return
 
@@ -334,7 +341,7 @@ class FlightManagerApp:
             self.refresh_checklist_ui()
 
             messagebox.showinfo("Success", "Settings imported successfully!")
-        except Exception as e:
+        except (sqlite3.Error, OSError, json.JSONDecodeError) as e:
             messagebox.showerror(
                 "Import Error", f"Failed to import settings:\n{e}"
             )
@@ -541,7 +548,7 @@ class FlightManagerApp:
         self.combo_filter_vehicle.pack(side=tk.LEFT, padx=(0, 10))
 
         # Auto-refresh triggers
-        self.filter_date.trace(
+        self.filter_date.trace_add(
             "w", lambda name, index, mode: self.load_logs_debounced()
         )
         self.combo_filter_vehicle.bind(
@@ -566,9 +573,6 @@ class FlightManagerApp:
             text="Flight ID",
             command=lambda: self.sort_logs("flight_no"),
         )
-        # self.tree.heading(
-        #     "date", text="Date", command=lambda: self.sort_logs("date")
-        # )
         self.tree.heading(
             "vehicle",
             text="Vehicle",
@@ -605,21 +609,21 @@ class FlightManagerApp:
 
         # Mousewheel scrolling for Treeview (Localized)
         def _on_tree_mousewheel(event):
-            # Vertical scroll
-            self.tree.yview_scroll(int(-1*(event.delta/120)) * 3, "units") # Faster (3 units)
+            self.tree.yview_scroll(int(-1 * (event.delta / 120)) * 3, "units")
 
         def _on_tree_shift_mousewheel(event):
-            # Horizontal scroll
-            self.tree.xview_scroll(int(-1*(event.delta/120)) * 5, "units") # Even faster for horizontal (5 units)
+            self.tree.xview_scroll(int(-1 * (event.delta / 120)) * 5, "units")
 
-        self.tree.bind("<Enter>", lambda e: [
-            self.tree.bind_all("<MouseWheel>", _on_tree_mousewheel),
+        def _bind_mousewheel(unused_event):
+            self.tree.bind_all("<MouseWheel>", _on_tree_mousewheel)
             self.tree.bind_all("<Shift-MouseWheel>", _on_tree_shift_mousewheel)
-        ])
-        self.tree.bind("<Leave>", lambda e: [
-            self.tree.unbind_all("<MouseWheel>"),
+
+        def _unbind_mousewheel(unused_event):
+            self.tree.unbind_all("<MouseWheel>")
             self.tree.unbind_all("<Shift-MouseWheel>")
-        ])
+
+        self.tree.bind("<Enter>", _bind_mousewheel)
+        self.tree.bind("<Leave>", _unbind_mousewheel)
 
         self.tree.bind("<Double-1>", self.on_history_double_click)
         self.tree.bind("<Button-3>", self.show_context_menu)
@@ -633,7 +637,10 @@ class FlightManagerApp:
         if item:
             self.tree.selection_set(item)
             menu = tk.Menu(self.root, tearoff=0)
-            menu.add_command(label="View Details", command=lambda: self.on_history_double_click(None))
+            menu.add_command(
+                label="View Details",
+                command=lambda: self.on_history_double_click(None)
+            )
 
             # Edit
             menu.add_command(label="Edit", command=self.edit_selected_log)
@@ -654,7 +661,10 @@ class FlightManagerApp:
             return
         vals = self.tree.item(item_id, "values")
         log_id = int(vals[0])
-        LogEditDialog(self.root, self.db, log_id, on_save_callback=self.refresh_after_delete)
+        dialogs.LogEditDialog(
+            self.root, self.db, log_id,
+            on_save_callback=self.refresh_after_delete
+        )
 
     def delete_selected_log(self):
         """Deletes the selected log after confirmation."""
@@ -664,7 +674,7 @@ class FlightManagerApp:
         vals = self.tree.item(item_id, "values")
         log_id = int(vals[0])
 
-        if messagebox.askyesno("Confirm Delete", "Are you sure you want to delete this flight log?"):
+        if messagebox.askyesno("Confirm Delete", "Delete this flight log?"):
             if self.db.delete_log(log_id):
                 self.refresh_after_delete()
             else:
@@ -672,17 +682,12 @@ class FlightManagerApp:
 
     def reset_filter(self):
         """Resets the filter criteria to defaults."""
-        self.filter_id.set("")
         self.filter_date.set(datetime.date.today().strftime("%Y-%m-%d"))
         self.filter_vehicle.set("All")
         self.load_logs()
 
     def sort_logs(self, col: str):
-        """Sorts the logs by the specified column.
-
-        Args:
-            col: The column name to sort by.
-        """
+        """Sorts the logs by the specified column."""
         if self.sort_col == col:
             self.sort_desc = not self.sort_desc
         else:
@@ -714,9 +719,9 @@ class FlightManagerApp:
         current_content = ""
         if param_file:
             try:
-                with open(param_file, "r") as f:
+                with open(param_file, "r", encoding="utf-8") as f:
                     current_content = f.read()
-            except Exception as e:
+            except OSError as e:
                 messagebox.showerror("Error", f"Read file failed: {e}")
                 return
         else:
@@ -728,9 +733,9 @@ class FlightManagerApp:
             messagebox.showwarning("Warning", "Please select a vehicle first.")
             return
 
-        ComparisonDialog(self.root, self.db, vehicle, current_content)
+        dialogs.ComparisonDialog(self.root, self.db, vehicle, current_content)
 
-    def on_history_double_click(self, event: tk.Event):
+    def on_history_double_click(self, unused_event: tk.Event):
         """Handles double-click events on the history treeview."""
         item_id = self.tree.selection()
         if not item_id:
@@ -739,7 +744,7 @@ class FlightManagerApp:
         vals = self.tree.item(item_id, "values")
         log_id = int(vals[0])
 
-        FlightDetailsDialog(
+        dialogs.FlightDetailsDialog(
             self.root,
             self.db,
             log_id,
@@ -754,17 +759,17 @@ class FlightManagerApp:
 
     def open_ignore_settings(self):
         """Opens the Ignore Settings dialog."""
-        IgnoreSettingsDialog(self.root, self.db)
+        dialogs.IgnoreSettingsDialog(self.root, self.db)
 
     def open_vehicle_settings(self):
         """Opens the Vehicle Settings dialog."""
-        VehicleSettingsDialog(
+        dialogs.VehicleSettingsDialog(
             self.root, self.db, on_close_callback=self.refresh_vehicle_ui
         )
 
     def open_checklist_settings(self):
         """Opens the Checklist Settings dialog."""
-        ChecklistSettingsDialog(
+        dialogs.ChecklistSettingsDialog(
             self.root, self.db, on_close_callback=self.refresh_checklist_ui
         )
 
@@ -787,17 +792,28 @@ class FlightManagerApp:
                 ttk.Label(frame, text=f"{name}:", width=15).pack(side=tk.LEFT)
                 entry = ttk.Entry(frame, width=15)
                 entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
-                entry.bind("<KeyRelease>", lambda e, n=name: self.validate_item(n))
+                entry.bind(
+                    "<KeyRelease>",
+                    lambda e, n=name: self.validate_item(n)
+                )
                 self.dynamic_widgets[name] = {
                     "type": "text", "var": entry, "rule": rule,
                     "status": status_label, "value": None
                 }
             elif itype == "single_select":
                 ttk.Label(frame, text=f"{name}:", width=15).pack(side=tk.LEFT)
-                vals = [opt.strip() for opt in options.split(",")] if options else []
-                combo = ttk.Combobox(frame, values=vals, state="readonly", width=15)
+                vals = (
+                    [opt.strip() for opt in options.split(",")]
+                    if options else []
+                )
+                combo = ttk.Combobox(
+                    frame, values=vals, state="readonly", width=15
+                )
                 combo.pack(side=tk.LEFT, fill=tk.X, expand=True)
-                combo.bind("<<ComboboxSelected>>", lambda e, n=name: self.validate_item(n))
+                combo.bind(
+                    "<<ComboboxSelected>>",
+                    lambda e, n=name: self.validate_item(n)
+                )
                 self.dynamic_widgets[name] = {
                     "type": "single_select", "var": combo, "rule": rule,
                     "status": status_label, "value": None
@@ -816,16 +832,21 @@ class FlightManagerApp:
 
             self.validate_item(name)
 
-        # Ensure scroll region is updated and add localized mousewheel support
+        # Update scroll region and add localized mousewheel support
         self.checklist_frame.update_idletasks()
         self.canvas.configure(scrollregion=self.canvas.bbox("all"))
 
         def _on_mousewheel(event):
-            self.canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+            self.canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
 
-        # Localized binding: only scrolls when mouse is over the checklist area
-        self.checklist_frame.bind("<Enter>", lambda e: self.canvas.bind_all("<MouseWheel>", _on_mousewheel))
-        self.checklist_frame.bind("<Leave>", lambda e: self.canvas.unbind_all("<MouseWheel>"))
+        self.checklist_frame.bind(
+            "<Enter>",
+            lambda e: self.canvas.bind_all("<MouseWheel>", _on_mousewheel)
+        )
+        self.checklist_frame.bind(
+            "<Leave>",
+            lambda e: self.canvas.unbind_all("<MouseWheel>")
+        )
 
     def validate_item(self, name: str):
         """Validates a single checklist item and updates its status label."""
@@ -850,7 +871,7 @@ class FlightManagerApp:
             status_label.config(text="", foreground="")
             return
 
-        is_valid, _ = validate_checklist_rule(val, rule)
+        is_valid, _ = utils.validate_checklist_rule(val, rule)
         if is_valid:
             status_label.config(text="✅", foreground="green")
         else:
@@ -868,10 +889,7 @@ class FlightManagerApp:
         else:
             self.combo_vehicle.set("")
 
-        # Update Filter Vehicle List: Union of 'vehicles' table and 'logs'
-        # This ensures we see:
-        # 1. Newly added vehicles (even if no logs yet)
-        # 2. Archived/Deleted vehicles that have logs
+        # Update Filter Vehicle List
         cursor = self.db.conn.cursor()
         cursor.execute(
             """
@@ -885,7 +903,7 @@ class FlightManagerApp:
         self.combo_filter_vehicle["values"] = hist_vehicles
 
     def calculate_next_id(self):
-        """Calculates and sets the next flight ID based on the selected date."""
+        """Calculates and sets the next flight ID."""
         date_val = self.log_date_var.get().strip()
         if not date_val:
             return
@@ -895,7 +913,7 @@ class FlightManagerApp:
         self.entry_flight_no.insert(0, str(next_id))
 
     def save_log(self):
-        """Validates and initiates the log saving process in a separate thread."""
+        """Validates and initiates the log saving process."""
         flight_no = self.entry_flight_no.get().strip()
         date = self.log_date_var.get().strip()
         vehicle = self.combo_vehicle.get().strip()
@@ -906,8 +924,8 @@ class FlightManagerApp:
         for name in self.dynamic_widgets:
             self.validate_item(name)
 
-        # 1. Validate using LogService (Decoupled Logic)
-        is_valid, errors = LogService.validate_log_entry(
+        # 1. Validate using LogService
+        is_valid, errors = services.LogService.validate_log_entry(
             flight_no, date, vehicle, self.dynamic_widgets
         )
 
@@ -921,16 +939,16 @@ class FlightManagerApp:
         param_content = ""
         if param_file:
             try:
-                with open(param_file, "r") as f:
+                with open(param_file, "r", encoding="utf-8") as f:
                     param_content = f.read()
-            except Exception as e:
+            except OSError as e:
                 messagebox.showerror(
                     "File Error", f"Could not read parameter file:\n{e}"
                 )
                 return
 
         # 2. Prepare Payload using LogService
-        log_data = LogService.prepare_log_payload(
+        log_data = services.LogService.prepare_log_payload(
             flight_no, date, vehicle, mission, note,
             self.dynamic_widgets, param_content
         )
@@ -955,7 +973,6 @@ class FlightManagerApp:
         try:
             saved_log_path = None
             if log_source:
-                # Use the decoupled file manager
                 saved_log_path = self.file_manager.save_log_file(
                     log_source,
                     log_data["date"],
@@ -965,13 +982,13 @@ class FlightManagerApp:
 
             log_data["log_file_path"] = saved_log_path
 
-            # Insert to DB (Thread-safe due to check_same_thread=False)
+            # Insert to DB
             self.db.insert_log(log_data)
 
             # Success Callback
             self.root.after(0, self._on_save_success)
 
-        except Exception as e:
+        except (sqlite3.Error, OSError) as e:
             # Error Callback
             self.root.after(0, lambda: self._on_save_error(str(e)))
 
@@ -980,7 +997,7 @@ class FlightManagerApp:
         self.root.config(cursor="")
         messagebox.showinfo("Success", "Log saved successfully!")
         self.clear_form()
-        self.load_logs(reset_page=True)
+        self.load_logs()
         self.refresh_vehicle_ui()
 
     def _on_save_error(self, error_msg: str):
@@ -990,24 +1007,24 @@ class FlightManagerApp:
             "Save Error", f"An error occurred during save:\n{error_msg}"
         )
 
-    def load_logs_debounced(self, *args):
+    def load_logs_debounced(self):
         """Debounced wrapper for load_logs."""
         if self._debounce_timer:
             self.root.after_cancel(self._debounce_timer)
         self._debounce_timer = self.root.after(
-            100, lambda: self.load_logs(reset_page=True)
+            100, self.load_logs
         )
 
-    def load_logs(self, reset_page: bool = False):
-        """Loads all matching flight logs from the database into the treeview asynchronously."""
+    def load_logs(self):
+        """Loads matching flight logs asynchronously."""
         filter_date = self.filter_date.get().strip()
         filter_vehicle = self.filter_vehicle.get()
 
         def _async_fetch():
             try:
-                # Fetch all matching rows (no limit/offset)
+                # Fetch all matching rows
                 rows = self.db.get_logs(
-                    None, # filter_id removed
+                    None,
                     filter_date,
                     filter_vehicle,
                     self.sort_col,
@@ -1016,24 +1033,22 @@ class FlightManagerApp:
 
                 # Update UI on the main thread
                 self.root.after(0, lambda: self._finalize_load_logs(rows))
-            except Exception as e:
-                self.root.after(0, lambda: messagebox.showerror("Database Error", f"Failed to load logs: {e}"))
+            except sqlite3.Error as e:
+                self.root.after(0, lambda: messagebox.showerror(
+                    "Database Error", f"Failed to load logs: {e}"
+                ))
 
         threading.Thread(target=_async_fetch, daemon=True).start()
 
     def _finalize_load_logs(self, rows):
-        """Updates the UI with the fetched logs. Must be called on the main thread."""
+        """Updates the UI with the fetched logs."""
         # Efficiently clear the Treeview
         self.tree.delete(*self.tree.get_children())
 
         # Populate rows
         for row in rows:
-            # Row structure from get_logs:
-            # id(0), flight_no(1), date(2), vehicle_name(3), system_check(4),
-            # mission(5), param(6), log_path(7), note(8), is_locked(9)
-
             flight_no_display = str(row[1])
-            if row[9]: # is_locked
+            if row[9]:  # is_locked
                 flight_no_display += " 🔒"
 
             # Display: id, flight_no, date, vehicle, mission, note
@@ -1061,7 +1076,7 @@ class FlightManagerApp:
             elif data["type"] == "single_select":
                 data["var"].set("")
 
-            # Refresh the status indicator (✅/❌) after clearing the field
+            # Refresh indicator
             self.validate_item(name)
 
         # Reset Files
@@ -1074,3 +1089,5 @@ class FlightManagerApp:
         self.entry_log_file.state(["readonly"])
 
         self.calculate_next_id()
+
+

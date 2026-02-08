@@ -3,6 +3,7 @@
 import ast
 import fnmatch
 import operator as op_lib
+import re
 from typing import Any, Dict, List, Optional, Tuple
 
 # Security-safe operators mapping for AST evaluation
@@ -23,21 +24,26 @@ SAFE_OPERATORS = {
     ast.NotEq: op_lib.ne,
 }
 
+
 def _safe_eval(node, variables):
     """Recursively evaluates an AST node safely."""
-    if isinstance(node, ast.Constant): # Python 3.8+
+    if isinstance(node, ast.Constant):  # Python 3.8+
         return node.value
-    elif hasattr(ast, 'Num') and isinstance(node, ast.Constant): # Pre-3.8
+    if hasattr(ast, "Num") and isinstance(node, ast.Constant):  # Pre-3.8
         return node.n
-    elif hasattr(ast, 'Str') and isinstance(node, ast.Constant): # Pre-3.8
+    if hasattr(ast, "Str") and isinstance(node, ast.Constant):  # Pre-3.8
         return node.s
-    elif hasattr(ast, 'NameConstant') and isinstance(node, ast.Constant): # Pre-3.8
+    if hasattr(ast, "NameConstant") and isinstance(node, ast.Constant):
         return node.value
-    elif isinstance(node, ast.BinOp):
-        return SAFE_OPERATORS[type(node.op)](_safe_eval(node.left, variables), _safe_eval(node.right, variables))
-    elif isinstance(node, ast.UnaryOp):
-        return SAFE_OPERATORS[type(node.op)](_safe_eval(node.operand, variables))
-    elif isinstance(node, ast.Compare):
+    if isinstance(node, ast.BinOp):
+        return SAFE_OPERATORS[type(node.op)](
+            _safe_eval(node.left, variables), _safe_eval(node.right, variables)
+        )
+    if isinstance(node, ast.UnaryOp):
+        return SAFE_OPERATORS[type(node.op)](
+            _safe_eval(node.operand, variables)
+        )
+    if isinstance(node, ast.Compare):
         left = _safe_eval(node.left, variables)
         for op, right_node in zip(node.ops, node.comparators):
             right = _safe_eval(right_node, variables)
@@ -45,14 +51,15 @@ def _safe_eval(node, variables):
                 return False
             left = right
         return True
-    elif isinstance(node, ast.Name):
+    if isinstance(node, ast.Name):
         if node.id in variables:
             return variables[node.id]
         raise ValueError(f"Unknown variable: {node.id}")
-    elif isinstance(node, ast.Expression):
+    if isinstance(node, ast.Expression):
         return _safe_eval(node.body, variables)
-    else:
-        raise TypeError(f"Unsupported operation: {type(node).__name__}")
+
+    raise TypeError(f"Unsupported operation: {type(node).__name__}")
+
 
 def validate_checklist_rule(value: Any, rule_str: str) -> Tuple[bool, str]:
     """Validates a value against a rule string expression securely.
@@ -111,11 +118,11 @@ def validate_checklist_rule(value: Any, rule_str: str) -> Tuple[bool, str]:
             expr = "value " + expr
 
         try:
-            tree = ast.parse(expr, mode='eval')
+            tree = ast.parse(expr, mode="eval")
             result = _safe_eval(tree, context)
             if not result:
                 return False, f"Condition failed: {rule}"
-        except Exception as e:
+        except (ValueError, TypeError, KeyError, SyntaxError) as e:
             return False, f"Error processing rule '{rule}': {e}"
 
     return True, ""
@@ -124,7 +131,7 @@ def validate_checklist_rule(value: Any, rule_str: str) -> Tuple[bool, str]:
 def parse_params(content: str) -> Dict[str, str]:
     """Parses a string content into a dictionary of parameters.
 
-    Supports '=', ',' and whitespace delimiters. Ignores comments starting with # or //.
+    Supports '=', ',' and whitespace delimiters. Ignores comments.
 
     Args:
         content: The string content of the parameter file.
@@ -142,7 +149,7 @@ def parse_params(content: str) -> Dict[str, str]:
             line = line.split("#", 1)[0]
         if "//" in line:
             line = line.split("//", 1)[0]
-            
+
         line = line.strip()
         if not line:
             continue
@@ -170,25 +177,23 @@ def filter_params(
 ) -> Dict[str, str]:
     """Filters a dictionary of parameters based on a list of glob patterns.
 
-    Uses pre-compiled regex for high performance with large datasets.
-
     Args:
         params: The dictionary of parameters to filter.
         ignore_patterns: A list of glob patterns to ignore (e.g., "PID_*").
 
     Returns:
-        A new dictionary containing only the parameters that do not match any
-        ignore pattern.
+        A new dictionary containing only the parameters that do not match.
     """
     if not ignore_patterns:
         return params
 
-    import re
     # Convert glob patterns to a single optimized regex
     try:
-        regex_str = "|".join(f"(?:{fnmatch.translate(p)})" for p in ignore_patterns)
+        regex_str = "|".join(
+            f"(?:{fnmatch.translate(p)})" for p in ignore_patterns
+        )
         pattern = re.compile(regex_str)
-    except Exception:
+    except re.error:
         # Fallback to individual glob matching if regex compilation fails
         filtered = {}
         for k, v in params.items():
@@ -212,11 +217,7 @@ def compare_params(
         ignore_patterns: A list of patterns to ignore during comparison.
 
     Returns:
-        A tuple containing three dictionaries:
-        - added: Parameters present in current but not reference.
-        - removed: Parameters present in reference but not current.
-        - changed: Parameters present in both but with different values,
-          mapping key to (old_value, new_value).
+        A tuple containing three dictionaries: added, removed, and changed.
     """
     curr_dict = parse_params(current_content)
     ref_dict = parse_params(ref_content)
@@ -233,3 +234,5 @@ def compare_params(
     }
 
     return added, removed, changed
+
+

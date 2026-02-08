@@ -8,7 +8,6 @@ import os
 import shutil
 import re
 import datetime
-import time
 from typing import List
 
 
@@ -26,7 +25,7 @@ class FileManager:
     def save_log_file(
         self, source_path: str, date_str: str, vehicle_name: str, flight_id: str
     ) -> str:
-        """Copies a log file to the captured_logs directory with a standard name.
+        """Copies a log file to the captured_logs directory.
 
         Args:
             source_path: Path to the source log file.
@@ -38,6 +37,7 @@ class FileManager:
             The absolute path to the saved file.
 
         Raises:
+            FileNotFoundError: If the source file does not exist.
             IOError: If the file copy fails.
         """
         if not source_path or not os.path.exists(source_path):
@@ -49,14 +49,14 @@ class FileManager:
         # Replace Windows/Unix reserved chars: < > : " / \ | ? *
         # Also handle control characters if any
         invalid_chars = r'[<>:"/\\|?*\x00-\x1f]'
-        
+
         safe_vehicle = re.sub(invalid_chars, "_", vehicle_name).strip()
         safe_date = re.sub(invalid_chars, "_", date_str).strip()
         safe_id = re.sub(invalid_chars, "_", str(flight_id)).strip()
-        
+
         orig_filename = os.path.basename(source_path)
         safe_orig = re.sub(invalid_chars, "_", orig_filename)
-        
+
         new_filename = f"{safe_date}_{safe_vehicle}_{safe_id}_{safe_orig}"
 
         dest_path = os.path.join(self.base_dir, new_filename)
@@ -64,13 +64,18 @@ class FileManager:
 
         return dest_path
 
-    def cleanup_logs(self, max_size_gb: float = 0, retention_days: int = 0, excluded_paths: List[str] = None) -> int:
+    def cleanup_logs(
+        self,
+        max_size_gb: float = 0,
+        retention_days: int = 0,
+        excluded_paths: List[str] = None
+    ) -> int:
         """Cleans up old log files based on size and age constraints.
 
         Args:
             max_size_gb: Maximum total size of logs in GB (0 for unlimited).
             retention_days: Maximum age of logs in days (0 for unlimited).
-            excluded_paths: List of file paths to never delete (e.g. locked logs).
+            excluded_paths: List of file paths to never delete (e.g. locked).
 
         Returns:
             The number of files deleted.
@@ -108,7 +113,7 @@ class FileManager:
         def try_remove(file_info):
             nonlocal deleted_count
             try:
-                # On Windows, this will fail if the file is opened by another process
+                # On Windows, this will fail if the file is opened
                 os.remove(file_info["path"])
                 deleted_count += 1
                 return True
@@ -118,15 +123,19 @@ class FileManager:
 
         # 2. Date-based Cleanup
         if retention_days > 0:
-            cutoff_date = datetime.date.today() - datetime.timedelta(days=retention_days)
+            cutoff_date = (
+                datetime.date.today() - datetime.timedelta(days=retention_days)
+            )
             remaining_files = []
-            
+
             for file_info in files:
                 should_delete = False
-                
+
                 try:
                     date_part = file_info["name"].split("_")[0]
-                    file_date = datetime.datetime.strptime(date_part, "%Y-%m-%d").date()
+                    file_date = datetime.datetime.strptime(
+                        date_part, "%Y-%m-%d"
+                    ).date()
                     if file_date < cutoff_date:
                         should_delete = True
                 except (ValueError, IndexError):
@@ -139,7 +148,7 @@ class FileManager:
                         remaining_files.append(file_info)
                 else:
                     remaining_files.append(file_info)
-            
+
             files = remaining_files
 
         # 3. Size-based Cleanup
@@ -154,8 +163,10 @@ class FileManager:
                 for file_info in files:
                     if total_size <= max_size_bytes:
                         break
-                    
+
                     if try_remove(file_info):
                         total_size -= file_info["size"]
 
         return deleted_count
+
+

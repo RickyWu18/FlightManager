@@ -7,11 +7,12 @@ parameter comparison, and viewing flight details.
 import json
 import os
 import shutil
+import sqlite3
 import tkinter as tk
 from tkinter import filedialog, messagebox, scrolledtext, ttk
 from typing import Any, Callable, Optional
 
-from flight_manager.utils import compare_params
+from flight_manager import utils
 
 
 class BaseSettingsDialog(tk.Toplevel):
@@ -66,12 +67,12 @@ class BaseSettingsDialog(tk.Toplevel):
             y = max(0, y)
 
             self.geometry(f"{width}x{height}+{x}+{y}")
-        except Exception:
+        except (ValueError, AttributeError, tk.TclError):
             # Fallback to requested geometry if centering fails
             self.geometry(geometry)
 
     def _create_scrolled_list(self, parent, list_height=10):
-        """Creates a Frame containing a Listbox, Scrollbar, and Sidebar Button Frame."""
+        """Creates a Frame with a Listbox and buttons."""
         container = ttk.Frame(parent)
         container.pack(fill=tk.BOTH, expand=True)
 
@@ -88,11 +89,13 @@ class BaseSettingsDialog(tk.Toplevel):
         return lb, btn_frame
 
     def _create_scrolled_tree(self, parent, columns, headings):
-        """Creates a Frame containing a Treeview, Scrollbar, and Sidebar Button Frame."""
+        """Creates a Frame with a Treeview and buttons."""
         container = ttk.Frame(parent)
         container.pack(fill=tk.BOTH, expand=True)
 
-        tree = ttk.Treeview(container, columns=columns, show="headings", selectmode="browse")
+        tree = ttk.Treeview(
+            container, columns=columns, show="headings", selectmode="browse"
+        )
         for col, head in zip(columns, headings):
             tree.heading(col, text=head)
 
@@ -142,32 +145,65 @@ class PreferencesDialog(BaseSettingsDialog):
         btn_frame = ttk.Frame(self, padding=10)
         btn_frame.pack(fill=tk.X, side=tk.BOTTOM)
 
-        ttk.Button(btn_frame, text="Save", command=self.save_settings, style="Settings.TButton").pack(side=tk.RIGHT, padx=5)
-        ttk.Button(btn_frame, text="Apply", command=self.apply_settings, style="Settings.TButton").pack(side=tk.RIGHT, padx=5)
-        ttk.Button(btn_frame, text="Cancel", command=self.destroy, style="Settings.TButton").pack(side=tk.RIGHT, padx=5)
+        ttk.Button(
+            btn_frame,
+            text="Save",
+            command=self.save_settings,
+            style="Settings.TButton"
+        ).pack(side=tk.RIGHT, padx=5)
+        ttk.Button(
+            btn_frame,
+            text="Apply",
+            command=self.apply_settings,
+            style="Settings.TButton"
+        ).pack(side=tk.RIGHT, padx=5)
+        ttk.Button(
+            btn_frame,
+            text="Cancel",
+            command=self.destroy,
+            style="Settings.TButton"
+        ).pack(side=tk.RIGHT, padx=5)
 
-        ttk.Label(btn_frame, text="Note: Restart may be required.", font=("Segoe UI", 9), foreground="gray").pack(side=tk.LEFT, padx=5)
+        ttk.Label(
+            btn_frame,
+            text="Note: Restart may be required.",
+            font=("Segoe UI", 9),
+            foreground="gray"
+        ).pack(side=tk.LEFT, padx=5)
 
     def create_general_tab(self):
         """Creates the General Settings tab."""
         tab = ttk.Frame(self.notebook, padding=20)
         self.notebook.add(tab, text="General")
 
-        ttk.Label(tab, text="Font Size:", font=("Segoe UI", 11, "bold")).pack(anchor="w", pady=(0, 5))
+        ttk.Label(
+            tab, text="Font Size:", font=("Segoe UI", 11, "bold")
+        ).pack(anchor="w", pady=(0, 5))
         current_size = int(self.db.get_setting("font_size", 10))
         self.size_var = tk.IntVar(value=current_size)
 
         f_frame = ttk.Frame(tab)
         f_frame.pack(fill=tk.X, pady=(0, 15))
-        ttk.Spinbox(f_frame, from_=8, to_=24, textvariable=self.size_var, width=10, font=("Segoe UI", 11)).pack(side=tk.LEFT)
-        ttk.Label(f_frame, text="pts", font=("Segoe UI", 11)).pack(side=tk.LEFT, padx=5)
+        ttk.Spinbox(
+            f_frame,
+            from_=8,
+            to_=24,
+            textvariable=self.size_var,
+            width=10,
+            font=("Segoe UI", 11)
+        ).pack(side=tk.LEFT)
+        ttk.Label(
+            f_frame, text="pts", font=("Segoe UI", 11)
+        ).pack(side=tk.LEFT, padx=5)
 
     def create_data_tab(self):
         """Creates the Data & Permissions tab."""
         tab = ttk.Frame(self.notebook, padding=20)
         self.notebook.add(tab, text="Log Data")
 
-        ttk.Label(tab, text="Edit Permissions:", font=("Segoe UI", 11, "bold")).pack(anchor="w", pady=(0, 5))
+        ttk.Label(
+            tab, text="Edit Permissions:", font=("Segoe UI", 11, "bold")
+        ).pack(anchor="w", pady=(0, 5))
         self.vars = {}
         features = [
             ("enable_edit_log", "Enable Edit Log Info"),
@@ -182,21 +218,47 @@ class PreferencesDialog(BaseSettingsDialog):
 
         for key, label in features:
             var = tk.BooleanVar(value=self.db.get_setting(key, "1") == "1")
-            ttk.Checkbutton(tab, text=label, variable=var, style="Settings.TCheckbutton").pack(anchor="w", pady=2)
+            ttk.Checkbutton(
+                tab, text=label, variable=var, style="Settings.TCheckbutton"
+            ).pack(anchor="w", pady=2)
             self.vars[key] = var
 
         ttk.Separator(tab, orient="horizontal").pack(fill=tk.X, pady=15)
 
-        ttk.Label(tab, text="Log Storage Management:", font=("Segoe UI", 11, "bold")).pack(anchor="w", pady=(0, 5))
-        ttk.Label(tab, text="Max Log Folder Size (GB, 0=Unlimited):", font=("Segoe UI", 11)).pack(anchor="w")
+        ttk.Label(
+            tab, text="Log Storage Management:", font=("Segoe UI", 11, "bold")
+        ).pack(anchor="w", pady=(0, 5))
+        ttk.Label(
+            tab, text="Max Log Folder Size (GB, 0=Unlimited):",
+            font=("Segoe UI", 11)
+        ).pack(anchor="w")
         current_max_size = float(self.db.get_setting("log_max_size_gb", "0"))
         self.max_size_var = tk.DoubleVar(value=current_max_size)
-        ttk.Spinbox(tab, from_=0, to_=9999, increment=0.1, textvariable=self.max_size_var, width=10, font=("Segoe UI", 11)).pack(anchor="w", pady=(0, 10))
+        ttk.Spinbox(
+            tab,
+            from_=0,
+            to_=9999,
+            increment=0.1,
+            textvariable=self.max_size_var,
+            width=10,
+            font=("Segoe UI", 11)
+        ).pack(anchor="w", pady=(0, 10))
 
-        ttk.Label(tab, text="Retention Period (Days, 0=Unlimited):", font=("Segoe UI", 11)).pack(anchor="w")
+        ttk.Label(
+            tab,
+            text="Retention Period (Days, 0=Unlimited):",
+            font=("Segoe UI", 11)
+        ).pack(anchor="w")
         current_retention = int(self.db.get_setting("log_retention_days", "0"))
         self.retention_var = tk.IntVar(value=current_retention)
-        ttk.Spinbox(tab, from_=0, to_=9999, textvariable=self.retention_var, width=10, font=("Segoe UI", 11)).pack(anchor="w", pady=(0, 5))
+        ttk.Spinbox(
+            tab,
+            from_=0,
+            to_=9999,
+            textvariable=self.retention_var,
+            width=10,
+            font=("Segoe UI", 11)
+        ).pack(anchor="w", pady=(0, 5))
 
     def apply_settings(self):
         """Applies the current settings via callback without saving to DB."""
@@ -211,15 +273,12 @@ class PreferencesDialog(BaseSettingsDialog):
             self.db.set_setting(key, "1" if var.get() else "0")
         self.db.set_setting("log_max_size_gb", str(self.max_size_var.get()))
         self.db.set_setting("log_retention_days", str(self.retention_var.get()))
-        self.db.set_setting("max_history_items", str(self.max_items_var.get()))
 
         if self.on_save_callback:
             self.on_save_callback(new_size)
 
         messagebox.showinfo("Success", "Settings saved successfully.")
         self.destroy()
-
-
 
 
 class IgnoreSettingsDialog(BaseSettingsDialog):
@@ -241,9 +300,9 @@ class IgnoreSettingsDialog(BaseSettingsDialog):
         # --- Top Section: List + Right Actions ---
         self.lb, side_btn_frame = self._create_scrolled_list(content_frame)
 
-        ttk.Button( side_btn_frame, text="Delete", command=self.delete_item).pack(
-            fill=tk.X, pady=2
-        )
+        ttk.Button(
+            side_btn_frame, text="Delete", command=self.delete_item
+        ).pack(fill=tk.X, pady=2)
 
         self.load_list()
 
@@ -323,7 +382,7 @@ class VehicleSettingsDialog(BaseSettingsDialog):
 
         self.load_list()
 
-        # --- Bottom Section: Add New (Moved back to bottom and kept taller) ---
+        # --- Bottom Section: Add New ---
         add_frame = ttk.LabelFrame(
             content_frame, text="Add New Vehicle", padding=15
         )
@@ -346,8 +405,6 @@ class VehicleSettingsDialog(BaseSettingsDialog):
         for name, archived in self.db.get_vehicles(include_archived=True):
             display = name + (" [ARCHIVED]" if archived else "")
             self.lb.insert(tk.END, display)
-            # Optional: color code archived items if desired, but standard Listbox
-            # item config is a bit verbose. Keeping simple text for now.
 
     def add_item(self):
         """Adds a new vehicle."""
@@ -402,7 +459,9 @@ class ChecklistSettingsDialog(BaseSettingsDialog):
         # Top Section: Treeview + Side Buttons
         columns = ("name", "type", "options", "rule")
         headings = ("Name", "Type", "Options", "Rule")
-        self.tree, btn_frame = self._create_scrolled_tree(content_frame, columns, headings)
+        self.tree, btn_frame = self._create_scrolled_tree(
+            content_frame, columns, headings
+        )
 
         self.tree.column("name", width=200)
         self.tree.column("type", width=100)
@@ -486,7 +545,7 @@ class ChecklistSettingsDialog(BaseSettingsDialog):
         self.lbl_opts = ttk.Label(grid_frame, text="Options (comma sep):")
         self.entry_opts = ttk.Entry(grid_frame)
 
-        ttk.Label(grid_frame, text="Rule (eg. value > 10, value == true):").grid(
+        ttk.Label(grid_frame, text="Rule (eg. value > 10):").grid(
             row=3, column=0, sticky="w", pady=2
         )
         self.entry_rule = ttk.Entry(grid_frame)
@@ -503,7 +562,7 @@ class ChecklistSettingsDialog(BaseSettingsDialog):
 
         self.entry_new.focus_set()
 
-    def toggle_options(self, event=None):
+    def toggle_options(self, unused_event=None):
         """Toggles the visibility of the options entry."""
         if self.type_var.get() == "single_select":
             self.lbl_opts.grid(row=2, column=0, sticky="w", pady=2)
@@ -560,7 +619,7 @@ class ChecklistSettingsDialog(BaseSettingsDialog):
         self.db.swap_checklist_order(db_id1, db_id2)
         self.load_list()
 
-        # Restore selection using the DB ID logic (find the new tree item that has the same DB ID)
+        # Restore selection
         for item in self.tree.get_children():
             if self.checklist_map[item]["id"] == db_id1:
                 self.tree.selection_set(item)
@@ -586,7 +645,6 @@ class ChecklistSettingsDialog(BaseSettingsDialog):
 
         data = self.checklist_map[sel_item_id]
 
-        # Create a simple modal dialog
         dlg = tk.Toplevel(self)
         dlg.title("Edit Item")
         dlg.geometry("400x350")
@@ -619,14 +677,13 @@ class ChecklistSettingsDialog(BaseSettingsDialog):
         )
         combo_type.pack(fill=tk.X, pady=(5, 10))
 
-        # Container for options to keep order fixed
         opts_container = ttk.Frame(main_frame)
         opts_container.pack(fill=tk.X)
 
         lbl_opts = ttk.Label(opts_container, text="Options (comma sep):")
         entry_opts = ttk.Entry(opts_container)
 
-        def update_opts_visibility(event=None):
+        def update_opts_visibility(unused_event=None):
             if type_var.get() == "single_select":
                 lbl_opts.pack(anchor="w")
                 entry_opts.pack(fill=tk.X, pady=(5, 10))
@@ -641,7 +698,7 @@ class ChecklistSettingsDialog(BaseSettingsDialog):
 
         update_opts_visibility()
 
-        ttk.Label(main_frame, text="Rule (eg. value > 10, value == true):").pack(anchor="w")
+        ttk.Label(main_frame, text="Rule (eg. value > 10):").pack(anchor="w")
         entry_rule = ttk.Entry(main_frame)
         entry_rule.pack(fill=tk.X, pady=(5, 10))
         if data.get("rule"):
@@ -666,7 +723,8 @@ class ChecklistSettingsDialog(BaseSettingsDialog):
             try:
                 cursor = self.db.conn.cursor()
                 cursor.execute(
-                    "UPDATE checklist_config SET item_name=?, item_type=?, options=?, validation_rule=? WHERE id=?",
+                    "UPDATE checklist_config SET item_name=?, item_type=?, "
+                    "options=?, validation_rule=? WHERE id=?",
                     (new_name, new_type, new_opts, new_rule, data["id"]),
                 )
                 self.db.conn.commit()
@@ -679,7 +737,7 @@ class ChecklistSettingsDialog(BaseSettingsDialog):
                         self.tree.selection_set(item)
                         break
 
-            except Exception as e:
+            except sqlite3.Error as e:
                 messagebox.showerror("Error", f"Update failed: {e}", parent=dlg)
 
         ttk.Button(main_frame, text="Save Changes", command=save_edit).pack(
@@ -801,7 +859,7 @@ class LogEditDialog(BaseSettingsDialog):
         checklist_data = []
         try:
             checklist_data = json.loads(checks_json)
-        except Exception:
+        except (json.JSONDecodeError, TypeError):
             pass
 
         for item in checklist_data:
@@ -812,26 +870,17 @@ class LogEditDialog(BaseSettingsDialog):
             itype = item.get("type", "checkbox")
             val = item.get("value", "")
 
-            if itype == "text":
+            if itype in ("text", "single_select"):
                 ttk.Label(f, text=f"{name}:", width=25).pack(side=tk.LEFT)
                 e = ttk.Entry(f)
                 e.insert(0, str(val))
                 e.pack(side=tk.LEFT, fill=tk.X, expand=True)
-                self.dynamic_widgets[name] = {"type": "text", "var": e}
-            elif itype == "single_select":
-                ttk.Label(f, text=f"{name}:", width=25).pack(side=tk.LEFT)
-                e = ttk.Entry(f)
-                e.insert(0, str(val))
-                e.pack(side=tk.LEFT, fill=tk.X, expand=True)
-                self.dynamic_widgets[name] = {
-                    "type": "single_select",
-                    "var": e,
-                }
+                self.dynamic_widgets[name] = {"type": itype, "var": e}
             else:
                 is_checked = val is True or str(val).lower() == "true"
                 var = tk.BooleanVar(value=is_checked)
                 chk = ttk.Checkbutton(f, text=name, variable=var)
-                chk.state(["!alternate"])  # Ensure it doesn't show solid block
+                chk.state(["!alternate"])
                 chk.pack(side=tk.LEFT)
                 self.dynamic_widgets[name] = {"type": "checkbox", "var": var}
 
@@ -875,7 +924,6 @@ class LogEditDialog(BaseSettingsDialog):
         checklist_data = []
         for name, data in self.dynamic_widgets.items():
             item_type = data["type"]
-            val = None
             if item_type == "checkbox":
                 val = data["var"].get()
             else:
@@ -904,15 +952,8 @@ class LogEditDialog(BaseSettingsDialog):
             if self.on_save_callback:
                 self.on_save_callback()
             self.destroy()
-        except Exception as e:
+        except sqlite3.Error as e:
             messagebox.showerror("Error", f"Failed to update log: {e}")
-
-
-    def on_close(self):
-        """Handles the dialog close event."""
-        if self.on_close_callback:
-            self.on_close_callback()
-        self.destroy()
 
 
 class ComparisonDialog(tk.Toplevel):
@@ -933,7 +974,7 @@ class ComparisonDialog(tk.Toplevel):
             db_manager: The database manager instance.
             vehicle: The name of the vehicle.
             current_content: The current parameter content.
-            exclude_id: ID to exclude from history (typically current flight).
+            exclude_id: ID to exclude from history.
         """
         super().__init__(parent)
         self.db = db_manager
@@ -991,7 +1032,7 @@ class ComparisonDialog(tk.Toplevel):
             )
             self.st.config(state="disabled")
 
-    def update_view(self, event=None):
+    def update_view(self, unused_event=None):
         """Updates the comparison view based on selection."""
         sel = self.combo.get()
         self.st.config(state="normal")
@@ -1004,7 +1045,7 @@ class ComparisonDialog(tk.Toplevel):
         ref_content = row[3] if row and row[3] else ""
 
         ignore_patterns = self.db.get_ignore_patterns()
-        added, removed, changed = compare_params(
+        added, removed, changed = utils.compare_params(
             self.current_content, ref_content, ignore_patterns
         )
 
@@ -1036,7 +1077,14 @@ class ComparisonDialog(tk.Toplevel):
 class FlightDetailsDialog(tk.Toplevel):
     """Dialog for viewing flight details."""
 
-    def __init__(self, parent: tk.Widget, db_manager: Any, log_id: int, file_manager: Any = None, on_update_callback: Optional[Callable[[], None]] = None):
+    def __init__(
+        self,
+        parent: tk.Widget,
+        db_manager: Any,
+        log_id: int,
+        file_manager: Any = None,
+        on_update_callback: Optional[Callable[[], None]] = None
+    ):
         """Initializes the FlightDetailsDialog.
 
         Args:
@@ -1044,7 +1092,7 @@ class FlightDetailsDialog(tk.Toplevel):
             db_manager: The database manager instance.
             log_id: The ID of the flight log.
             file_manager: The file manager instance.
-            on_update_callback: Optional callback when log is updated or deleted.
+            on_update_callback: Optional callback when updated.
         """
         super().__init__(parent)
         self.db = db_manager
@@ -1105,21 +1153,31 @@ class FlightDetailsDialog(tk.Toplevel):
         action_frame = ttk.Frame(self.container, padding=10)
         action_frame.pack(fill=tk.X)
 
-        edit_btn = ttk.Button(action_frame, text="Edit Log Info", command=self.edit_log)
+        edit_btn = ttk.Button(
+            action_frame, text="Edit Log Info", command=self.edit_log
+        )
         edit_btn.pack(side=tk.LEFT, padx=5)
-        if self.db.get_setting("enable_edit_log", "1") == "0" or self.is_locked:
+        if (self.db.get_setting("enable_edit_log", "1") == "0" or
+                self.is_locked):
             edit_btn.state(["disabled"])
 
-        del_btn = ttk.Button(action_frame, text="Delete Log", command=self.delete_log)
+        del_btn = ttk.Button(
+            action_frame, text="Delete Log", command=self.delete_log
+        )
         del_btn.pack(side=tk.LEFT, padx=5)
-        if self.db.get_setting("enable_delete_log", "1") == "0" or self.is_locked:
+        if (self.db.get_setting("enable_delete_log", "1") == "0" or
+                self.is_locked):
             del_btn.state(["disabled"])
 
         lock_text = "🔓 Unlock Log" if self.is_locked else "🔒 Lock Log"
-        lock_btn = ttk.Button(action_frame, text=lock_text, command=self.toggle_lock)
+        lock_btn = ttk.Button(
+            action_frame, text=lock_text, command=self.toggle_lock
+        )
         lock_btn.pack(side=tk.LEFT, padx=5)
 
-        info_frame = ttk.LabelFrame(self.container, text="Information", padding=10)
+        info_frame = ttk.LabelFrame(
+            self.container, text="Information", padding=10
+        )
         info_frame.pack(fill=tk.X, padx=10, pady=5)
         ttk.Label(info_frame, text=f"Date: {self.date}").grid(
             row=0, column=0, sticky="w", padx=10
@@ -1147,7 +1205,9 @@ class FlightDetailsDialog(tk.Toplevel):
             st.config(state="disabled")
             st.pack(fill=tk.BOTH, expand=True)
 
-        check_frame = ttk.LabelFrame(self.container, text="Preflight Check", padding=10)
+        check_frame = ttk.LabelFrame(
+            self.container, text="Preflight Check", padding=10
+        )
         check_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
 
         canvas = tk.Canvas(check_frame, height=200)
@@ -1167,18 +1227,8 @@ class FlightDetailsDialog(tk.Toplevel):
         checklist_data = []
         try:
             checklist_data = json.loads(checks_json)
-        except Exception:
-            if checks_json:
-                for item in checks_json.split(", "):
-                    if ":" in item:
-                        n, v = item.split(": ", 1)
-                        checklist_data.append(
-                            {"name": n, "type": "text", "value": v}
-                        )
-                    else:
-                        checklist_data.append(
-                            {"name": item, "type": "checkbox", "value": True}
-                        )
+        except (json.JSONDecodeError, TypeError):
+            pass
 
         for item in checklist_data:
             f = ttk.Frame(scroll_frame)
@@ -1188,7 +1238,7 @@ class FlightDetailsDialog(tk.Toplevel):
             itype = item.get("type", "checkbox")
             val = item.get("value", "")
 
-            if itype == "text" or itype == "single_select":
+            if itype in ("text", "single_select"):
                 ttk.Label(f, text=f"{name}:", width=25).pack(side=tk.LEFT)
                 e = ttk.Entry(f)
                 e.insert(0, str(val))
@@ -1198,11 +1248,13 @@ class FlightDetailsDialog(tk.Toplevel):
                 is_checked = val is True or str(val).lower() == "true"
                 var = tk.BooleanVar(value=is_checked)
                 chk = ttk.Checkbutton(f, text=name, variable=var)
-                chk.state(["disabled", "!alternate"])  # Clear indeterminate state
-                chk.var = var  # Keep reference alive
+                chk.state(["disabled", "!alternate"])
+                chk.var = var
                 chk.pack(side=tk.LEFT)
 
-        param_frame = ttk.LabelFrame(self.container, text="Parameter Data", padding=10)
+        param_frame = ttk.LabelFrame(
+            self.container, text="Parameter Data", padding=10
+        )
         param_frame.pack(fill=tk.X, padx=10, pady=5)
 
         ttk.Button(
@@ -1210,25 +1262,35 @@ class FlightDetailsDialog(tk.Toplevel):
         ).pack(side=tk.LEFT, padx=5)
 
         is_param_none = not self.param_content or not self.param_content.strip()
-        param_btn_text = "Upload Params..." if is_param_none else "Update Params..."
+        param_btn_text = (
+            "Upload Params..." if is_param_none else "Update Params..."
+        )
         upd_param_btn = ttk.Button(
             param_frame, text=param_btn_text, command=self.update_params
         )
         upd_param_btn.pack(side=tk.LEFT, padx=5)
 
         # Enable if setting is on OR if it's a first-time upload
-        if (self.db.get_setting("enable_update_params", "1") == "0" or self.is_locked) and not is_param_none:
+        enable_upd_param = (
+            self.db.get_setting("enable_update_params", "1") == "1" and
+            not self.is_locked
+        )
+        if not enable_upd_param and not is_param_none:
             upd_param_btn.state(["disabled"])
 
         ttk.Button(
             param_frame, text="Export Params", command=self.export_params
         ).pack(side=tk.LEFT, padx=5)
 
-        log_frame = ttk.LabelFrame(self.container, text="Flight Log File", padding=10)
+        log_frame = ttk.LabelFrame(
+            self.container, text="Flight Log File", padding=10
+        )
         log_frame.pack(fill=tk.X, padx=10, pady=5)
 
         file_exists = self.log_path and os.path.exists(self.log_path)
-        display_name = os.path.basename(self.log_path) if self.log_path else "None"
+        display_name = (
+            os.path.basename(self.log_path) if self.log_path else "None"
+        )
 
         font_size = int(self.db.get_setting("font_size", 10))
         label_font = ("Segoe UI", font_size)
@@ -1237,7 +1299,9 @@ class FlightDetailsDialog(tk.Toplevel):
             display_name += " [REMOVED]"
             label_font = ("Segoe UI", font_size, "overstrike")
 
-        self.lbl_log_file = tk.Label(log_frame, text=f"File: {display_name}", font=label_font)
+        self.lbl_log_file = tk.Label(
+            log_frame, text=f"File: {display_name}", font=label_font
+        )
         self.lbl_log_file.pack(side=tk.LEFT, padx=5)
 
         if self.log_path and file_exists:
@@ -1253,7 +1317,11 @@ class FlightDetailsDialog(tk.Toplevel):
         upd_log_btn.pack(side=tk.RIGHT, padx=5)
 
         # Enable if setting is on OR if it's a first-time upload (is_none)
-        if (self.db.get_setting("enable_update_log_file", "1") == "0" or self.is_locked) and not is_none:
+        enable_upd_log = (
+            self.db.get_setting("enable_update_log_file", "1") == "1" and
+            not self.is_locked
+        )
+        if not enable_upd_log and not is_none:
             upd_log_btn.state(["disabled"])
 
     def toggle_lock(self):
@@ -1265,7 +1333,7 @@ class FlightDetailsDialog(tk.Toplevel):
 
     def open_compare(self):
         """Opens the comparison dialog for this flight."""
-        ComparisonDialog(
+        utils.ComparisonDialog(
             self,
             self.db,
             self.vehicle,
@@ -1275,15 +1343,18 @@ class FlightDetailsDialog(tk.Toplevel):
 
     def update_params(self):
         """Updates the parameter content from a new file."""
-        filename = filedialog.askopenfilename(title="Select New Parameter File")
+        filename = filedialog.askopenfilename(
+            title="Select New Parameter File"
+        )
         if filename:
             try:
-                with open(filename, "r") as f:
+                with open(filename, "r", encoding="utf-8") as f:
                     new_content = f.read()
 
                 # Get current log data to update
                 row = self.db.get_log_by_id(self.log_id)
-                if not row: return
+                if not row:
+                    return
 
                 log_data = {
                     "flight_no": row[0],
@@ -1303,25 +1374,31 @@ class FlightDetailsDialog(tk.Toplevel):
                 if self.on_update_callback:
                     self.on_update_callback()
                 self.refresh_ui()
-            except Exception as e:
-                messagebox.showerror("Error", f"Failed to update parameters: {e}")
+            except (sqlite3.Error, OSError) as e:
+                messagebox.showerror(
+                    "Error", f"Failed to update parameters: {e}"
+                )
 
     def update_log_file(self):
         """Updates the log file from a new source."""
-        filename = filedialog.askopenfilename(title="Select New Flight Log File")
+        filename = filedialog.askopenfilename(
+            title="Select New Flight Log File"
+        )
         if filename:
             try:
                 if not self.file_manager:
-                    messagebox.showerror("Error", "File manager not available.")
+                    messagebox.showerror(
+                        "Error", "File manager not available."
+                    )
                     return
 
                 new_path = self.file_manager.save_log_file(
                     filename, self.date, self.vehicle, self.flight_no
                 )
 
-                # Get current log data to update
                 row = self.db.get_log_by_id(self.log_id)
-                if not row: return
+                if not row:
+                    return
 
                 log_data = {
                     "flight_no": row[0],
@@ -1341,7 +1418,7 @@ class FlightDetailsDialog(tk.Toplevel):
                 if self.on_update_callback:
                     self.on_update_callback()
                 self.refresh_ui()
-            except Exception as e:
+            except (sqlite3.Error, OSError) as e:
                 messagebox.showerror("Error", f"Failed to update log file: {e}")
 
     def edit_log(self):
@@ -1351,11 +1428,17 @@ class FlightDetailsDialog(tk.Toplevel):
                 self.on_update_callback()
             self.refresh_ui()
 
-        LogEditDialog(self, self.db, self.log_id, on_save_callback=refresh_after_edit)
+        LogEditDialog(
+            self, self.db, self.log_id, on_save_callback=refresh_after_edit
+        )
 
     def delete_log(self):
         """Deletes this flight log after confirmation."""
-        if messagebox.askyesno("Confirm Delete", "Are you sure you want to delete this flight log? This action cannot be undone."):
+        msg = (
+            "Are you sure you want to delete this flight log? "
+            "This action cannot be undone."
+        )
+        if messagebox.askyesno("Confirm Delete", msg):
             if self.db.delete_log(self.log_id):
                 messagebox.showinfo("Deleted", "Flight log has been deleted.")
                 if self.on_update_callback:
@@ -1371,9 +1454,12 @@ class FlightDetailsDialog(tk.Toplevel):
             initialfile=f"params_{self.date}_{self.flight_no}.txt",
         )
         if f:
-            with open(f, "w", encoding="utf-8") as file:
-                file.write(self.param_content)
-            messagebox.showinfo("Success", "Parameters exported.")
+            try:
+                with open(f, "w", encoding="utf-8") as file:
+                    file.write(self.param_content)
+                messagebox.showinfo("Success", "Parameters exported.")
+            except OSError as e:
+                messagebox.showerror("Error", f"Export failed: {e}")
 
     def export_log(self):
         """Exports the log file to a user-selected location."""
@@ -1386,5 +1472,9 @@ class FlightDetailsDialog(tk.Toplevel):
             initialfile=os.path.basename(self.log_path),
         )
         if f:
-            shutil.copy2(self.log_path, f)
-            messagebox.showinfo("Success", "Log file exported.")
+            try:
+                shutil.copy2(self.log_path, f)
+                messagebox.showinfo("Success", "Log file exported.")
+            except OSError as e:
+                messagebox.showerror("Error", f"Export failed: {e}")
+

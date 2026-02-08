@@ -5,7 +5,7 @@ data insertion, querying, and schema migrations.
 """
 
 import sqlite3
-from contextlib import contextmanager
+import contextlib
 from typing import Any, Dict, List, Optional, Tuple
 
 
@@ -21,7 +21,7 @@ class DatabaseManager:
         self.conn = sqlite3.connect(db_name, check_same_thread=False)
         self.create_tables()
 
-    @contextmanager
+    @contextlib.contextmanager
     def _get_cursor(self):
         """Context manager for database cursors."""
         cursor = self.conn.cursor()
@@ -32,16 +32,16 @@ class DatabaseManager:
 
     def _column_exists(self, table: str, column: str) -> bool:
         """Checks if a column exists in a table using PRAGMA.
-        
+
         Args:
             table: Table name.
             column: Column name.
-            
+
         Returns:
             True if column exists, False otherwise.
         """
         with self._get_cursor() as cursor:
-            # PRAGMA table_info returns (cid, name, type, notnull, dflt_value, pk)
+            # PRAGMA returns (cid, name, type, notnull, dflt_value, pk)
             cursor.execute(f"PRAGMA table_info({table})")
             columns = [row[1] for row in cursor.fetchall()]
         return column in columns
@@ -78,7 +78,9 @@ class DatabaseManager:
             ]
             for col_name, col_type in logs_cols:
                 if not self._column_exists("logs", col_name):
-                    cursor.execute(f"ALTER TABLE logs ADD COLUMN {col_name} {col_type}")
+                    cursor.execute(
+                        f"ALTER TABLE logs ADD COLUMN {col_name} {col_type}"
+                    )
 
             # 3. Checklist configuration table
             cursor.execute(
@@ -93,7 +95,7 @@ class DatabaseManager:
                 )
             """
             )
-            
+
             # Migrations for 'checklist_config'
             checklist_cols = [
                 ("order_index", "INTEGER DEFAULT 0"),
@@ -101,7 +103,10 @@ class DatabaseManager:
             ]
             for col_name, col_def in checklist_cols:
                 if not self._column_exists("checklist_config", col_name):
-                    cursor.execute(f"ALTER TABLE checklist_config ADD COLUMN {col_name} {col_def}")
+                    cursor.execute(
+                        f"ALTER TABLE checklist_config ADD COLUMN {col_name} "
+                        f"{col_def}"
+                    )
 
             # 4. Vehicles table
             cursor.execute(
@@ -113,10 +118,13 @@ class DatabaseManager:
                 )
             """
             )
-            
+
             # Migrations for 'vehicles'
             if not self._column_exists("vehicles", "is_archived"):
-                cursor.execute("ALTER TABLE vehicles ADD COLUMN is_archived INTEGER DEFAULT 0")
+                cursor.execute(
+                    "ALTER TABLE vehicles ADD COLUMN is_archived "
+                    "INTEGER DEFAULT 0"
+                )
 
             # 5. Ignore Patterns table
             cursor.execute(
@@ -145,12 +153,15 @@ class DatabaseManager:
         """Seeds the database with default values if tables are empty."""
         with self._get_cursor() as cursor:
             # Default Font Size
-            cursor.execute("SELECT COUNT(*) FROM settings WHERE key = 'font_size'")
+            cursor.execute(
+                "SELECT COUNT(*) FROM settings WHERE key = 'font_size'"
+            )
             if cursor.fetchone()[0] == 0:
                 cursor.execute(
-                    "INSERT INTO settings (key, value) VALUES (?, ?)", ("font_size", "10")
+                    "INSERT INTO settings (key, value) VALUES (?, ?)",
+                    ("font_size", "10")
                 )
-            
+
             # Default Feature Settings
             feature_defaults = [
                 ("enable_edit_log", "1"),
@@ -161,9 +172,14 @@ class DatabaseManager:
                 ("log_retention_days", "0"),
             ]
             for key, val in feature_defaults:
-                cursor.execute("SELECT COUNT(*) FROM settings WHERE key = ?", (key,))
+                cursor.execute(
+                    "SELECT COUNT(*) FROM settings WHERE key = ?", (key,)
+                )
                 if cursor.fetchone()[0] == 0:
-                    cursor.execute("INSERT INTO settings (key, value) VALUES (?, ?)", (key, val))
+                    cursor.execute(
+                        "INSERT INTO settings (key, value) VALUES (?, ?)",
+                        (key, val)
+                    )
 
             # Default Vehicle
             cursor.execute("SELECT COUNT(*) FROM vehicles")
@@ -217,11 +233,11 @@ class DatabaseManager:
                     "SELECT name, is_archived FROM vehicles ORDER BY name"
                 )
                 return cursor.fetchall()
-            else:
-                cursor.execute(
-                    "SELECT name FROM vehicles WHERE is_archived = 0 ORDER BY name"
-                )
-                return [r[0] for r in cursor.fetchall()]
+
+            cursor.execute(
+                "SELECT name FROM vehicles WHERE is_archived = 0 ORDER BY name"
+            )
+            return [r[0] for r in cursor.fetchall()]
 
     def add_vehicle(self, name: str) -> bool:
         """Adds a new vehicle to the database.
@@ -276,13 +292,17 @@ class DatabaseManager:
         """
         with self._get_cursor() as cursor:
             cursor.execute(
-                "SELECT item_name, item_type, options, validation_rule, id, order_index "
-                "FROM checklist_config ORDER BY order_index, id"
+                "SELECT item_name, item_type, options, validation_rule, id, "
+                "order_index FROM checklist_config ORDER BY order_index, id"
             )
             return cursor.fetchall()
 
     def add_checklist_item(
-        self, name: str, item_type: str, options: Optional[str] = None, validation_rule: Optional[str] = None
+        self,
+        name: str,
+        item_type: str,
+        options: Optional[str] = None,
+        validation_rule: Optional[str] = None
     ) -> bool:
         """Adds a new item to the checklist configuration.
 
@@ -290,21 +310,23 @@ class DatabaseManager:
             name: The name of the checklist item.
             item_type: The type of input (e.g., 'checkbox', 'text').
             options: Comma-separated options for 'single_select' types.
-            validation_rule: Rule to validate the input (e.g., '>10', 'checked').
+            validation_rule: Rule to validate input (e.g., '>10', 'checked').
 
         Returns:
             True if successful, False if the item already exists.
         """
         try:
             with self._get_cursor() as cursor:
-                cursor.execute("SELECT MAX(order_index) FROM checklist_config")
+                cursor.execute(
+                    "SELECT MAX(order_index) FROM checklist_config"
+                )
                 res = cursor.fetchone()[0]
                 next_order = (res + 1) if res is not None else 0
 
                 cursor.execute(
                     "INSERT INTO checklist_config "
-                    "(item_name, item_type, options, validation_rule, order_index) "
-                    "VALUES (?, ?, ?, ?, ?)",
+                    "(item_name, item_type, options, validation_rule, "
+                    "order_index) VALUES (?, ?, ?, ?, ?)",
                     (name, item_type, options, validation_rule, next_order),
                 )
                 self.conn.commit()
@@ -332,16 +354,22 @@ class DatabaseManager:
             id2: The ID of the second item.
         """
         with self._get_cursor() as cursor:
-            cursor.execute("SELECT order_index FROM checklist_config WHERE id=?", (id1,))
+            cursor.execute(
+                "SELECT order_index FROM checklist_config WHERE id=?", (id1,)
+            )
             o1 = cursor.fetchone()[0]
-            cursor.execute("SELECT order_index FROM checklist_config WHERE id=?", (id2,))
+            cursor.execute(
+                "SELECT order_index FROM checklist_config WHERE id=?", (id2,)
+            )
             o2 = cursor.fetchone()[0]
 
             cursor.execute(
-                "UPDATE checklist_config SET order_index=? WHERE id=?", (o2, id1)
+                "UPDATE checklist_config SET order_index=? WHERE id=?",
+                (o2, id1)
             )
             cursor.execute(
-                "UPDATE checklist_config SET order_index=? WHERE id=?", (o1, id2)
+                "UPDATE checklist_config SET order_index=? WHERE id=?",
+                (o1, id2)
             )
             self.conn.commit()
 
@@ -353,7 +381,9 @@ class DatabaseManager:
             A list of pattern strings.
         """
         with self._get_cursor() as cursor:
-            cursor.execute("SELECT pattern FROM ignore_patterns ORDER BY pattern")
+            cursor.execute(
+                "SELECT pattern FROM ignore_patterns ORDER BY pattern"
+            )
             return [r[0] for r in cursor.fetchall()]
 
     def add_ignore_pattern(self, pattern: str) -> bool:
@@ -368,7 +398,8 @@ class DatabaseManager:
         try:
             with self._get_cursor() as cursor:
                 cursor.execute(
-                    "INSERT INTO ignore_patterns (pattern) VALUES (?)", (pattern,)
+                    "INSERT INTO ignore_patterns (pattern) VALUES (?)",
+                    (pattern,)
                 )
                 self.conn.commit()
             return True
@@ -429,9 +460,10 @@ class DatabaseManager:
         """
         with self._get_cursor() as cursor:
             # Use SQL aggregation to find the max flight_no.
-            # We cast to INTEGER to handle cases where flight_no is stored as text.
+            # Cast to INTEGER to handle cases where flight_no is text.
             cursor.execute(
-                "SELECT MAX(CAST(flight_no AS INTEGER)) FROM logs WHERE date = ?",
+                "SELECT MAX(CAST(flight_no AS INTEGER)) FROM logs "
+                "WHERE date = ?",
                 (date_str,),
             )
             res = cursor.fetchone()[0]
@@ -470,31 +502,29 @@ class DatabaseManager:
             True if successful.
 
         Raises:
-            Exception: If the insertion fails.
+            sqlite3.Error: If the insertion fails.
         """
-        try:
-            # Ensure is_locked is present
-            if "is_locked" not in data:
-                data["is_locked"] = 0
+        # Ensure is_locked is present
+        if "is_locked" not in data:
+            data["is_locked"] = 0
 
-            with self._get_cursor() as cursor:
-                cursor.execute(
-                    """
-                    INSERT INTO logs (
-                        flight_no, date, vehicle_name, mission_title, note,
-                        system_check, parameter_changes, log_file_path, is_locked
-                    )
-                    VALUES (
-                        :flight_no, :date, :vehicle_name, :mission_title, :note,
-                        :system_check, :parameter_changes, :log_file_path, :is_locked
-                    )
-                    """,
-                    data,
+        with self._get_cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO logs (
+                    flight_no, date, vehicle_name, mission_title, note,
+                    system_check, parameter_changes, log_file_path, is_locked
                 )
-                self.conn.commit()
-            return True
-        except Exception as e:
-            raise e
+                VALUES (
+                    :flight_no, :date, :vehicle_name, :mission_title,
+                    :note, :system_check, :parameter_changes, :log_file_path,
+                    :is_locked
+                )
+                """,
+                data,
+            )
+            self.conn.commit()
+        return True
 
     def update_log(self, log_id: int, data: Dict[str, Any]) -> bool:
         """Updates an existing flight log in the database.
@@ -507,35 +537,34 @@ class DatabaseManager:
             True if successful.
 
         Raises:
-            Exception: If the update fails.
+            sqlite3.Error: If the update fails.
         """
-        try:
-            with self._get_cursor() as cursor:
-                # Ensure is_locked is present
-                if "is_locked" not in data:
-                    cursor.execute("SELECT is_locked FROM logs WHERE id = ?", (log_id,))
-                    res = cursor.fetchone()
-                    data["is_locked"] = res[0] if res else 0
+        with self._get_cursor() as cursor:
+            # Ensure is_locked is present
+            if "is_locked" not in data:
+                cursor.execute(
+                    "SELECT is_locked FROM logs WHERE id = ?", (log_id,)
+                )
+                res = cursor.fetchone()
+                data["is_locked"] = res[0] if res else 0
 
-                query = """
-                    UPDATE logs SET
-                        flight_no = :flight_no,
-                        date = :date,
-                        vehicle_name = :vehicle_name,
-                        mission_title = :mission_title,
-                        note = :note,
-                        system_check = :system_check,
-                        parameter_changes = :parameter_changes,
-                        log_file_path = :log_file_path,
-                        is_locked = :is_locked
-                    WHERE id = :id
-                """
-                data["id"] = log_id
-                cursor.execute(query, data)
-                self.conn.commit()
-            return True
-        except Exception as e:
-            raise e
+            query = """
+                UPDATE logs SET
+                    flight_no = :flight_no,
+                    date = :date,
+                    vehicle_name = :vehicle_name,
+                    mission_title = :mission_title,
+                    note = :note,
+                    system_check = :system_check,
+                    parameter_changes = :parameter_changes,
+                    log_file_path = :log_file_path,
+                    is_locked = :is_locked
+                WHERE id = :id
+            """
+            data["id"] = log_id
+            cursor.execute(query, data)
+            self.conn.commit()
+        return True
 
     def delete_log(self, log_id: int) -> bool:
         """Deletes a flight log from the database.
@@ -549,7 +578,9 @@ class DatabaseManager:
         try:
             with self._get_cursor() as cursor:
                 # Check if locked
-                cursor.execute("SELECT is_locked FROM logs WHERE id = ?", (log_id,))
+                cursor.execute(
+                    "SELECT is_locked FROM logs WHERE id = ?", (log_id,)
+                )
                 res = cursor.fetchone()
                 if res and res[0]:
                     return False
@@ -557,7 +588,7 @@ class DatabaseManager:
                 cursor.execute("DELETE FROM logs WHERE id = ?", (log_id,))
                 self.conn.commit()
             return True
-        except Exception:
+        except sqlite3.Error:
             return False
 
     def _build_filter_query(
@@ -580,7 +611,7 @@ class DatabaseManager:
         if filter_vehicle and filter_vehicle != "All":
             query += " AND vehicle_name = ?"
             params.append(filter_vehicle)
-            
+
         return query, params
 
     def get_logs(
@@ -612,7 +643,9 @@ class DatabaseManager:
             "mission_title, parameter_changes, log_file_path, note, is_locked "
             "FROM logs"
         )
-        query, params = self._build_filter_query(base_query, filter_id, filter_date, filter_vehicle)
+        query, params = self._build_filter_query(
+            base_query, filter_id, filter_date, filter_vehicle
+        )
 
         order = "DESC" if sort_desc else "ASC"
         allowed_sort = [
@@ -654,7 +687,9 @@ class DatabaseManager:
         Returns:
             The total number of matching logs.
         """
-        query, params = self._build_filter_query("SELECT COUNT(*) FROM logs", filter_id, filter_date, filter_vehicle)
+        query, params = self._build_filter_query(
+            "SELECT COUNT(*) FROM logs", filter_id, filter_date, filter_vehicle
+        )
 
         with self._get_cursor() as cursor:
             cursor.execute(query, params)
@@ -672,8 +707,8 @@ class DatabaseManager:
         with self._get_cursor() as cursor:
             cursor.execute(
                 "SELECT flight_no, date, vehicle_name, system_check, "
-                "parameter_changes, log_file_path, mission_title, note, is_locked "
-                "FROM logs WHERE id = ?",
+                "parameter_changes, log_file_path, mission_title, note, "
+                "is_locked FROM logs WHERE id = ?",
                 (log_id,),
             )
             return cursor.fetchone()
@@ -722,7 +757,8 @@ class DatabaseManager:
 
             # Checklist
             cursor.execute(
-                "SELECT item_name, item_type, options, validation_rule, order_index FROM checklist_config"
+                "SELECT item_name, item_type, options, validation_rule, "
+                "order_index FROM checklist_config"
             )
             settings["checklist"] = [
                 {
@@ -751,57 +787,44 @@ class DatabaseManager:
             True if successful.
 
         Raises:
-            Exception: If the import fails.
+            sqlite3.Error: If the import fails.
         """
-        try:
-            with self._get_cursor() as cursor:
-                # Vehicles
-                if "vehicles" in settings:
-                    for v in settings["vehicles"]:
-                        try:
-                            cursor.execute(
-                                "INSERT OR IGNORE INTO vehicles "
-                                "(name, is_archived) VALUES (?, ?)",
-                                (v["name"], v.get("is_archived", 0)),
-                            )
-                        except Exception:
-                            pass
+        with self._get_cursor() as cursor:
+            # Vehicles
+            if "vehicles" in settings:
+                for v in settings["vehicles"]:
+                    cursor.execute(
+                        "INSERT OR IGNORE INTO vehicles "
+                        "(name, is_archived) VALUES (?, ?)",
+                        (v["name"], v.get("is_archived", 0)),
+                    )
 
-                # Checklist (Upsert)
-                if "checklist" in settings:
-                    for c in settings["checklist"]:
-                        try:
-                            cursor.execute(
-                                """
-                                INSERT OR REPLACE INTO checklist_config
-                                (item_name, item_type, options, validation_rule, order_index)
-                                VALUES (?, ?, ?, ?, ?)
-                                """,
-                                (
-                                    c["item_name"],
-                                    c["item_type"],
-                                    c["options"],
-                                    c.get("validation_rule"),
-                                    c["order_index"],
-                                ),
-                            )
-                        except Exception:
-                            pass
+            # Checklist (Upsert)
+            if "checklist" in settings:
+                for c in settings["checklist"]:
+                    cursor.execute(
+                        """
+                        INSERT OR REPLACE INTO checklist_config
+                        (item_name, item_type, options, validation_rule,
+                        order_index) VALUES (?, ?, ?, ?, ?)
+                        """,
+                        (
+                            c["item_name"],
+                            c["item_type"],
+                            c["options"],
+                            c.get("validation_rule"),
+                            c["order_index"],
+                        ),
+                    )
 
-                # Ignore Patterns
-                if "ignore_patterns" in settings:
-                    for p in settings["ignore_patterns"]:
-                        try:
-                            cursor.execute(
-                                "INSERT OR IGNORE INTO ignore_patterns "
-                                "(pattern) VALUES (?)",
-                                (p,),
-                            )
-                        except Exception:
-                            pass
+            # Ignore Patterns
+            if "ignore_patterns" in settings:
+                for p in settings["ignore_patterns"]:
+                    cursor.execute(
+                        "INSERT OR IGNORE INTO ignore_patterns "
+                        "(pattern) VALUES (?)",
+                        (p,),
+                    )
 
-                self.conn.commit()
-            return True
-        except Exception as e:
-            self.conn.rollback()
-            raise e
+            self.conn.commit()
+        return True

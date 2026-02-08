@@ -6,7 +6,7 @@ logic from the UI code.
 
 import json
 from typing import Any, Dict, List, Optional, Tuple
-from flight_manager.utils import validate_checklist_rule
+from flight_manager import utils
 
 class LogService:
     """Service for handling flight log operations."""
@@ -41,9 +41,9 @@ class LogService:
         for name, data in checklist_items.items():
             rule = data.get("rule")
             val = data.get("value")
-            
+
             if rule:
-                is_valid, err_msg = validate_checklist_rule(val, rule)
+                is_valid, err_msg = utils.validate_checklist_rule(val, rule)
                 if not is_valid:
                     errors.append(f"Checklist '{name}': {err_msg}")
 
@@ -83,7 +83,7 @@ class LogService:
                 "type": data["type"],
                 "value": data["value"]
             })
-        
+
         system_check_json = json.dumps(checklist_data)
 
         return {
