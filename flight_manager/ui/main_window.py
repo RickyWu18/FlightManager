@@ -548,7 +548,7 @@ class FlightManagerApp:
         self.combo_filter_vehicle.pack(side=tk.LEFT, padx=(0, 10))
 
         # Auto-refresh triggers
-        self.filter_date.trace_add(
+        self.filter_date.trace(
             "w", lambda name, index, mode: self.load_logs_debounced()
         )
         self.combo_filter_vehicle.bind(
