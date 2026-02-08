@@ -1,7 +1,7 @@
 ---
 name: Todo Issue
 about: Summarize for the require works
-title: ''
+title: "[TODO] "
 labels: ''
 assignees: ''
 
