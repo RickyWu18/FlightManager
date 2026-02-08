@@ -9,7 +9,7 @@ import tkinter as tk
 from tkinter import ttk
 from typing import Callable
 
-from tkcalendar import Calendar
+import tkcalendar
 
 
 class CalendarDialog(tk.Toplevel):
@@ -31,7 +31,7 @@ class CalendarDialog(tk.Toplevel):
         super().__init__(parent)
         self.callback = callback
         self.title("Select Date")
-        self.geometry("300x250")
+        self.geometry("400x350")
         self.transient(parent)
 
         # Position relative to widget if provided
@@ -50,7 +50,7 @@ class CalendarDialog(tk.Toplevel):
     def create_widgets(self):
         """Creates and arranges the widgets in the dialog."""
         # Calendar Widget with specific pattern
-        self.cal = Calendar(
+        self.cal = tkcalendar.Calendar(
             self,
             selectmode="day",
             year=self.current_date.year,
@@ -82,7 +82,8 @@ class CalendarDialog(tk.Toplevel):
         self.cal.selection_set(today)
 
     def confirm_date(self):
-        """Confirms the selection and calls the callback with the date string."""
+        """Confirms the selection and calls the callback."""
         date_str = self.cal.get_date()
         self.callback(date_str)
         self.destroy()
+
