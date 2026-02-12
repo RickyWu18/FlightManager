@@ -1333,7 +1333,7 @@ class FlightDetailsDialog(tk.Toplevel):
 
     def open_compare(self):
         """Opens the comparison dialog for this flight."""
-        utils.ComparisonDialog(
+        ComparisonDialog(
             self,
             self.db,
             self.vehicle,
