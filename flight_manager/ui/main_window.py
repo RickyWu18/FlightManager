@@ -492,9 +492,6 @@ class FlightManagerApp:
         ttk.Button(btn_frame, text="Save Log", command=self.save_log).pack(
             side=tk.LEFT, padx=5
         )
-        ttk.Button(
-            btn_frame, text="Force Save", command=self.force_save_log
-        ).pack(side=tk.LEFT, padx=5)
         ttk.Button(btn_frame, text="Clear Form", command=self.clear_form).pack(
             side=tk.LEFT, padx=5
         )
@@ -947,21 +944,11 @@ class FlightManagerApp:
         self.entry_flight_no.insert(0, str(next_id))
 
     def save_log(self):
-        """Validates and initiates the log saving process."""
-        self._do_save_log(force=False)
+        """Validates and initiates the log saving process.
 
-    def force_save_log(self):
-        """Saves the log ignoring preflight check failures after confirmation."""
-        if not messagebox.askyesno(
-            "Force Save",
-            "Preflight check validation will be skipped.\n"
-            "Are you sure you want to force save this log?"
-        ):
-            return
-        self._do_save_log(force=True)
-
-    def _do_save_log(self, force: bool = False):
-        """Core save logic used by both save_log and force_save_log."""
+        If only preflight check items fail (not required fields), offers the
+        user the option to force save and bypass those failures.
+        """
         flight_no = self.entry_flight_no.get().strip()
         date = self.log_date_var.get().strip()
         vehicle = self.combo_vehicle.get().strip()
@@ -972,16 +959,29 @@ class FlightManagerApp:
         for name in self.dynamic_widgets:
             self.validate_item(name)
 
-        # 1. Validate using LogService
-        is_valid, errors = services.LogService.validate_log_entry(
-            flight_no, date, vehicle, self.dynamic_widgets,
-            skip_checklist=force
+        # Check required fields first (Flight ID, Date, Vehicle)
+        req_ok, req_errors = services.LogService.validate_log_entry(
+            flight_no, date, vehicle, {}, skip_checklist=True
         )
-
-        if not is_valid:
-            msg = "Validation Errors:\n\n" + "\n".join(errors)
-            messagebox.showwarning("Validation Failed", msg)
+        if not req_ok:
+            messagebox.showwarning(
+                "Validation Failed",
+                "Validation Errors:\n\n" + "\n".join(req_errors)
+            )
             return
+
+        # Check full validation including preflight checklist
+        is_valid, chk_errors = services.LogService.validate_log_entry(
+            flight_no, date, vehicle, self.dynamic_widgets
+        )
+        if not is_valid:
+            msg = (
+                "Preflight check failed:\n\n"
+                + "\n".join(chk_errors)
+                + "\n\nForce save anyway?"
+            )
+            if not messagebox.askyesno("Preflight Failed", msg):
+                return
 
         # Prepare Param Content
         param_file = self.entry_param_file.get().strip()
@@ -996,7 +996,7 @@ class FlightManagerApp:
                 )
                 return
 
-        # 2. Prepare Payload using LogService
+        # Prepare Payload using LogService
         log_data = services.LogService.prepare_log_payload(
             flight_no, date, vehicle, mission, note,
             self.dynamic_widgets, param_content
