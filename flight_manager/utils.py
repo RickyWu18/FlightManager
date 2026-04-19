@@ -128,10 +128,30 @@ def validate_checklist_rule(value: Any, rule_str: str) -> Tuple[bool, str]:
     return True, ""
 
 
+def _is_px4_qgc_format(content: str) -> bool:
+    """Returns True if content matches the PX4 QGroundControl tab-separated format."""
+    for line in content.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        parts = stripped.split("\t")
+        if len(parts) == 5:
+            try:
+                int(parts[0])  # Vehicle-Id
+                int(parts[1])  # Component-Id
+                int(parts[4])  # Type
+                return True
+            except ValueError:
+                pass
+        return False
+    return False
+
+
 def parse_params(content: str) -> Dict[str, str]:
     """Parses a string content into a dictionary of parameters.
 
-    Supports '=', ',' and whitespace delimiters. Ignores comments.
+    Supports ArduPilot ('=', ',', whitespace) and PX4 QGC tab-separated formats.
+    Ignores comment lines.
 
     Args:
         content: The string content of the parameter file.
@@ -141,6 +161,24 @@ def parse_params(content: str) -> Dict[str, str]:
     """
     params = {}
     if not content:
+        return params
+
+    # PX4 QGC format: Vehicle-Id\tComponent-Id\tName\tValue\tType
+    if _is_px4_qgc_format(content):
+        for line in content.splitlines():
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#"):
+                continue
+            parts = stripped.split("\t")
+            if len(parts) >= 4:
+                try:
+                    int(parts[0])  # validate it's a data line
+                    name = parts[2].strip()
+                    value = parts[3].strip()
+                    if name:
+                        params[name] = value
+                except (ValueError, IndexError):
+                    pass
         return params
 
     for line in content.splitlines():

@@ -376,6 +376,7 @@ class FlightManagerApp:
         )
         self.combo_vehicle = ttk.Combobox(self.input_frame, state="readonly")
         self.combo_vehicle.grid(row=1, column=1, sticky="ew", pady=5)
+        self.combo_vehicle.bind("<<ComboboxSelected>>", self._on_vehicle_selected)
 
         # Flight ID
         ttk.Label(self.input_frame, text="Flight ID:").grid(
@@ -491,6 +492,9 @@ class FlightManagerApp:
         ttk.Button(btn_frame, text="Save Log", command=self.save_log).pack(
             side=tk.LEFT, padx=5
         )
+        ttk.Button(
+            btn_frame, text="Force Save", command=self.force_save_log
+        ).pack(side=tk.LEFT, padx=5)
         ttk.Button(btn_frame, text="Clear Form", command=self.clear_form).pack(
             side=tk.LEFT, padx=5
         )
@@ -695,13 +699,43 @@ class FlightManagerApp:
             self.sort_desc = True
         self.load_logs()
 
+    def _get_param_initial_dir(self) -> Optional[str]:
+        """Returns the best initial directory for the parameter file dialog."""
+        vehicle = self.combo_vehicle.get()
+        if vehicle:
+            last = self.db.get_setting(f"last_param_path_{vehicle}", "")
+            if last and os.path.exists(last):
+                return os.path.dirname(last)
+        default = self.db.get_setting("default_param_path", "")
+        if default and os.path.isdir(default):
+            return default
+        return None
+
     def browse_param_file(self):
         """Opens a file dialog to select a parameter file."""
-        filename = filedialog.askopenfilename(title="Select Parameter File")
+        filename = filedialog.askopenfilename(
+            title="Select Parameter File",
+            initialdir=self._get_param_initial_dir()
+        )
         if filename:
             self.entry_param_file.state(["!readonly"])
             self.entry_param_file.delete(0, tk.END)
             self.entry_param_file.insert(0, filename)
+            self.entry_param_file.state(["readonly"])
+            vehicle = self.combo_vehicle.get()
+            if vehicle:
+                self.db.set_setting(f"last_param_path_{vehicle}", filename)
+
+    def _on_vehicle_selected(self, unused_event=None):
+        """Auto-populates param file with the last used path for the vehicle."""
+        vehicle = self.combo_vehicle.get()
+        if not vehicle:
+            return
+        last = self.db.get_setting(f"last_param_path_{vehicle}", "")
+        if last and os.path.exists(last):
+            self.entry_param_file.state(["!readonly"])
+            self.entry_param_file.delete(0, tk.END)
+            self.entry_param_file.insert(0, last)
             self.entry_param_file.state(["readonly"])
 
     def browse_log_file(self):
@@ -914,6 +948,20 @@ class FlightManagerApp:
 
     def save_log(self):
         """Validates and initiates the log saving process."""
+        self._do_save_log(force=False)
+
+    def force_save_log(self):
+        """Saves the log ignoring preflight check failures after confirmation."""
+        if not messagebox.askyesno(
+            "Force Save",
+            "Preflight check validation will be skipped.\n"
+            "Are you sure you want to force save this log?"
+        ):
+            return
+        self._do_save_log(force=True)
+
+    def _do_save_log(self, force: bool = False):
+        """Core save logic used by both save_log and force_save_log."""
         flight_no = self.entry_flight_no.get().strip()
         date = self.log_date_var.get().strip()
         vehicle = self.combo_vehicle.get().strip()
@@ -926,7 +974,8 @@ class FlightManagerApp:
 
         # 1. Validate using LogService
         is_valid, errors = services.LogService.validate_log_entry(
-            flight_no, date, vehicle, self.dynamic_widgets
+            flight_no, date, vehicle, self.dynamic_widgets,
+            skip_checklist=force
         )
 
         if not is_valid:

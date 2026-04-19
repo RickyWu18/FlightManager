@@ -16,7 +16,8 @@ class LogService:
         flight_no: str,
         date: str,
         vehicle: str,
-        checklist_items: Dict[str, Dict[str, Any]]
+        checklist_items: Dict[str, Dict[str, Any]],
+        skip_checklist: bool = False,
     ) -> Tuple[bool, List[str]]:
         """Validates log entry data.
 
@@ -25,6 +26,7 @@ class LogService:
             date: The flight date.
             vehicle: The vehicle name.
             checklist_items: Dictionary of checklist widget data.
+            skip_checklist: When True, bypasses preflight check validation.
 
         Returns:
             A tuple (is_valid, error_messages_list).
@@ -37,15 +39,15 @@ class LogService:
         if not date:
             errors.append("Date is required.")
 
-        # Validate Checklist Rules
-        for name, data in checklist_items.items():
-            rule = data.get("rule")
-            val = data.get("value")
+        if not skip_checklist:
+            for name, data in checklist_items.items():
+                rule = data.get("rule")
+                val = data.get("value")
 
-            if rule:
-                is_valid, err_msg = utils.validate_checklist_rule(val, rule)
-                if not is_valid:
-                    errors.append(f"Checklist '{name}': {err_msg}")
+                if rule:
+                    is_valid, err_msg = utils.validate_checklist_rule(val, rule)
+                    if not is_valid:
+                        errors.append(f"Checklist '{name}': {err_msg}")
 
         return len(errors) == 0, errors
 
