@@ -9,10 +9,11 @@ import os
 import shutil
 import sqlite3
 import tkinter as tk
-from tkinter import filedialog, messagebox, scrolledtext, ttk
+from tkinter import filedialog, font, messagebox, scrolledtext, ttk
 from typing import Any, Callable, Optional
 
 from flight_manager import utils
+from flight_manager.ui import theme
 
 
 class BaseSettingsDialog(tk.Toplevel):
@@ -76,7 +77,7 @@ class BaseSettingsDialog(tk.Toplevel):
         container = ttk.Frame(parent)
         container.pack(fill=tk.BOTH, expand=True)
 
-        lb = tk.Listbox(container, height=list_height, font=("Segoe UI", 11))
+        lb = tk.Listbox(container, height=list_height, font=theme.MAIN)
         sb = ttk.Scrollbar(container, orient="vertical", command=lb.yview)
         lb.configure(yscrollcommand=sb.set)
 
@@ -131,11 +132,6 @@ class PreferencesDialog(BaseSettingsDialog):
         self.db = db_manager
         self.on_save_callback = on_save_callback
 
-        # Ensure Notebook tabs and buttons use the correct font
-        style = ttk.Style()
-        style.configure("TNotebook.Tab", font=("Segoe UI", 11))
-        style.configure("Settings.TButton", font=("Segoe UI", 11))
-
         self.notebook = ttk.Notebook(self)
         self.notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=(10, 5))
 
@@ -167,7 +163,7 @@ class PreferencesDialog(BaseSettingsDialog):
         ttk.Label(
             btn_frame,
             text="Note: Restart may be required.",
-            font=("Segoe UI", 9),
+            font=theme.SMALL,
             foreground="gray"
         ).pack(side=tk.LEFT, padx=5)
 
@@ -177,7 +173,7 @@ class PreferencesDialog(BaseSettingsDialog):
         self.notebook.add(tab, text="General")
 
         ttk.Label(
-            tab, text="Font Size:", font=("Segoe UI", 11, "bold")
+            tab, text="Font Size:", font=theme.BOLD
         ).pack(anchor="w", pady=(0, 5))
         current_size = int(self.db.get_setting("font_size", 10))
         self.size_var = tk.IntVar(value=current_size)
@@ -190,10 +186,10 @@ class PreferencesDialog(BaseSettingsDialog):
             to_=24,
             textvariable=self.size_var,
             width=10,
-            font=("Segoe UI", 11)
+            font=theme.MAIN
         ).pack(side=tk.LEFT)
         ttk.Label(
-            f_frame, text="pts", font=("Segoe UI", 11)
+            f_frame, text="pts", font=theme.MAIN
         ).pack(side=tk.LEFT, padx=5)
 
         ttk.Label(
@@ -238,7 +234,7 @@ class PreferencesDialog(BaseSettingsDialog):
         self.notebook.add(tab, text="Log Data")
 
         ttk.Label(
-            tab, text="Edit Permissions:", font=("Segoe UI", 11, "bold")
+            tab, text="Edit Permissions:", font=theme.BOLD
         ).pack(anchor="w", pady=(0, 5))
         self.vars = {}
         features = [
@@ -247,10 +243,6 @@ class PreferencesDialog(BaseSettingsDialog):
             ("enable_update_params", "Enable Update Parameters"),
             ("enable_update_log_file", "Enable Update Log File"),
         ]
-
-        # Style for checkbuttons to ensure font consistency
-        style = ttk.Style()
-        style.configure("Settings.TCheckbutton", font=("Segoe UI", 11))
 
         for key, label in features:
             var = tk.BooleanVar(value=self.db.get_setting(key, "1") == "1")
@@ -262,11 +254,11 @@ class PreferencesDialog(BaseSettingsDialog):
         ttk.Separator(tab, orient="horizontal").pack(fill=tk.X, pady=15)
 
         ttk.Label(
-            tab, text="Log Storage Management:", font=("Segoe UI", 11, "bold")
+            tab, text="Log Storage Management:", font=theme.BOLD
         ).pack(anchor="w", pady=(0, 5))
         ttk.Label(
             tab, text="Max Log Folder Size (GB, 0=Unlimited):",
-            font=("Segoe UI", 11)
+            font=theme.MAIN
         ).pack(anchor="w")
         current_max_size = float(self.db.get_setting("log_max_size_gb", "0"))
         self.max_size_var = tk.DoubleVar(value=current_max_size)
@@ -277,13 +269,13 @@ class PreferencesDialog(BaseSettingsDialog):
             increment=0.1,
             textvariable=self.max_size_var,
             width=10,
-            font=("Segoe UI", 11)
+            font=theme.MAIN
         ).pack(anchor="w", pady=(0, 10))
 
         ttk.Label(
             tab,
             text="Retention Period (Days, 0=Unlimited):",
-            font=("Segoe UI", 11)
+            font=theme.MAIN
         ).pack(anchor="w")
         current_retention = int(self.db.get_setting("log_retention_days", "0"))
         self.retention_var = tk.IntVar(value=current_retention)
@@ -293,7 +285,7 @@ class PreferencesDialog(BaseSettingsDialog):
             to_=9999,
             textvariable=self.retention_var,
             width=10,
-            font=("Segoe UI", 11)
+            font=theme.MAIN
         ).pack(anchor="w", pady=(0, 5))
 
     def apply_settings(self):
@@ -350,7 +342,7 @@ class IgnoreSettingsDialog(BaseSettingsDialog):
         add_frame.pack(fill=tk.X)
 
         add_frame.columnconfigure(0, weight=1)
-        self.entry_new = ttk.Entry(add_frame, font=("Segoe UI", 11))
+        self.entry_new = ttk.Entry(add_frame, font=theme.MAIN)
         self.entry_new.grid(row=0, column=0, sticky="ew", padx=(0, 10), ipady=3)
 
         ttk.Button(
@@ -426,7 +418,7 @@ class VehicleSettingsDialog(BaseSettingsDialog):
         add_frame.pack(fill=tk.X)
 
         add_frame.columnconfigure(0, weight=1)
-        self.entry_new = ttk.Entry(add_frame, font=("Segoe UI", 11))
+        self.entry_new = ttk.Entry(add_frame, font=theme.MAIN)
         self.entry_new.grid(row=0, column=0, sticky="ew", padx=(0, 10), ipady=3)
 
         ttk.Button(
@@ -925,9 +917,8 @@ class LogEditDialog(BaseSettingsDialog):
         note_frame = ttk.LabelFrame(main_frame, text="Note", padding=10)
         note_frame.pack(fill=tk.X, pady=5)
 
-        font_size = int(self.db.get_setting("font_size", 10))
         self.text_note = scrolledtext.ScrolledText(
-            note_frame, height=5, font=("Segoe UI", font_size)
+            note_frame, height=5, font=theme.MAIN
         )
         self.text_note.insert(tk.END, self.note if self.note else "")
         self.text_note.pack(fill=tk.BOTH, expand=True)
@@ -1035,13 +1026,12 @@ class ComparisonDialog(tk.Toplevel):
         self.combo.pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
         self.combo.bind("<<ComboboxSelected>>", self.update_view)
 
-        font_size = int(self.db.get_setting("font_size", 10))
-        self.st = scrolledtext.ScrolledText(self, font=("Consolas", font_size))
+        self.st = scrolledtext.ScrolledText(self, font=theme.MONO)
         self.st.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
         self.st.tag_config("add", foreground="green")
         self.st.tag_config("rem", foreground="red")
         self.st.tag_config("chg", foreground="darkorange")
-        self.st.tag_config("head", font=("Consolas", font_size, "bold"))
+        self.st.tag_config("head", font=theme.MONO_BOLD)
 
     def load_history(self):
         """Loads parameter history for the vehicle."""
@@ -1234,9 +1224,8 @@ class FlightDetailsDialog(tk.Toplevel):
             note_frame = ttk.LabelFrame(self.container, text="Note", padding=10)
             note_frame.pack(fill=tk.X, padx=10, pady=5)
 
-            font_size = int(self.db.get_setting("font_size", 10))
             st = scrolledtext.ScrolledText(
-                note_frame, height=3, font=("Segoe UI", font_size)
+                note_frame, height=3, font=theme.MAIN
             )
             st.insert(tk.END, self.note)
             st.config(state="disabled")
@@ -1329,12 +1318,12 @@ class FlightDetailsDialog(tk.Toplevel):
             os.path.basename(self.log_path) if self.log_path else "None"
         )
 
-        font_size = int(self.db.get_setting("font_size", 10))
-        label_font = ("Segoe UI", font_size)
-
         if self.log_path and not file_exists:
             display_name += " [REMOVED]"
-            label_font = ("Segoe UI", font_size, "overstrike")
+            label_font = font.Font(font=theme.MAIN)
+            label_font.configure(overstrike=1)
+        else:
+            label_font = theme.MAIN
 
         self.lbl_log_file = tk.Label(
             log_frame, text=f"File: {display_name}", font=label_font

@@ -11,6 +11,8 @@ from typing import Callable
 
 import tkcalendar
 
+from flight_manager.ui import theme
+
 
 class CalendarDialog(tk.Toplevel):
     """A modal dialog containing a calendar widget."""
@@ -57,6 +59,7 @@ class CalendarDialog(tk.Toplevel):
             month=self.current_date.month,
             day=self.current_date.day,
             date_pattern="y-mm-dd",
+            font=theme.MAIN,
         )  # Enforce ISO format
         self.cal.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
