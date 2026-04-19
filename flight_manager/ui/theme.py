@@ -38,13 +38,14 @@ class FontManager:
         # Small font needs a size relative to the base, so defer the real size
         # to apply_size(). Create placeholders here so widgets can reference
         # the names immediately.
-        font.Font(name=MAIN, family=self._main_family, size=10)
-        font.Font(name=BOLD, family=self._main_family, size=10, weight="bold")
-        font.Font(name=SMALL, family=self._main_family, size=8)
-        font.Font(name=MONO, family=self._mono_family, size=10)
-        font.Font(
-            name=MONO_BOLD, family=self._mono_family, size=10, weight="bold"
-        )
+        # Store references to prevent garbage collection from deleting the fonts.
+        self._fonts = [
+            font.Font(root=self._root, name=MAIN, family=self._main_family, size=10),
+            font.Font(root=self._root, name=BOLD, family=self._main_family, size=10, weight="bold"),
+            font.Font(root=self._root, name=SMALL, family=self._main_family, size=8),
+            font.Font(root=self._root, name=MONO, family=self._mono_family, size=10),
+            font.Font(root=self._root, name=MONO_BOLD, family=self._mono_family, size=10, weight="bold"),
+        ]
 
     def apply_size(self, size: int):
         """Reconfigure every named font and TTK style to the given size.
@@ -53,14 +54,14 @@ class FontManager:
         """
         small_size = max(8, size - 2)
 
-        font.nametofont(MAIN).configure(size=size)
-        font.nametofont(BOLD).configure(size=size)
-        font.nametofont(SMALL).configure(size=small_size)
-        font.nametofont(MONO).configure(size=size)
-        font.nametofont(MONO_BOLD).configure(size=size)
+        font.nametofont(MAIN, root=self._root).configure(size=size)
+        font.nametofont(BOLD, root=self._root).configure(size=size)
+        font.nametofont(SMALL, root=self._root).configure(size=small_size)
+        font.nametofont(MONO, root=self._root).configure(size=size)
+        font.nametofont(MONO_BOLD, root=self._root).configure(size=size)
 
         for name in _STANDARD_TK_FONTS:
-            font.nametofont(name).configure(size=size)
+            font.nametofont(name, root=self._root).configure(size=size)
 
         style = ttk.Style()
         style.configure(".", font=(MAIN, size))
