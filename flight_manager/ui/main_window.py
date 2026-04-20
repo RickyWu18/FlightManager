@@ -11,7 +11,7 @@ import sqlite3
 import sys
 import threading
 import tkinter as tk
-from tkinter import filedialog, font, messagebox, scrolledtext, ttk
+from tkinter import filedialog, messagebox, scrolledtext, ttk
 from typing import Any, Dict, Optional
 
 from flight_manager import database
@@ -21,6 +21,7 @@ from flight_manager import utils
 from flight_manager import version
 from flight_manager.ui import calendar
 from flight_manager.ui import dialogs
+from flight_manager.ui import theme
 
 
 def get_resource_path(relative_path: str) -> str:
@@ -88,7 +89,8 @@ class FlightManagerApp:
 
         # Apply Global Font Size
         self.initial_font_size = int(self.db.get_setting("font_size", 10))
-        self.apply_font_size(self.initial_font_size)
+        self.font_manager = theme.FontManager(self.root)
+        self.font_manager.apply_size(self.initial_font_size)
 
         # State for Sorting/Filtering
         self.sort_col = "flight_no"
@@ -152,55 +154,10 @@ class FlightManagerApp:
             # If current date is invalid, reset to today
             self.filter_date.set(datetime.date.today().strftime("%Y-%m-%d"))
 
-    def apply_font_size(self, size: int):
-        """Applies a global font size to the application using named fonts.
-
-        Args:
-            size: The font size to apply.
-        """
-        # Update standard named fonts
-        for font_name in (
-            "TkDefaultFont",
-            "TkTextFont",
-            "TkMenuFont",
-            "TkHeadingFont",
-            "TkCaptionFont",
-            "TkSmallCaptionFont",
-        ):
-            f = font.nametofont(font_name)
-            f.configure(size=size)
-
-        # Update specific fonts used in the app
-        is_win = sys.platform == "win32"
-        main_font_family = "Segoe UI" if is_win else "Helvetica"
-        mono_font_family = "Consolas" if is_win else "Courier"
-
-        # Ensure our custom fonts exist and are updated
-        try:
-            custom_main = font.Font(
-                name="AppMainFont", family=main_font_family, size=size
-            )
-        except tk.TclError:
-            custom_main = font.nametofont("AppMainFont")
-            custom_main.configure(size=size)
-
-        try:
-            custom_mono = font.Font(
-                name="AppMonoFont", family=mono_font_family, size=size
-            )
-        except tk.TclError:
-            custom_mono = font.nametofont("AppMonoFont")
-            custom_mono.configure(size=size)
-
-        # Update TTK Styles
-        style = ttk.Style()
-        style.configure(".", font=("AppMainFont", size))
-        style.configure("Treeview.Heading", font=("AppMainFont", size, "bold"))
-
     def open_preferences(self):
         """Opens the Preferences dialog."""
         dialogs.PreferencesDialog(
-            self.root, self.db, on_save_callback=self.apply_font_size
+            self.root, self.db, on_save_callback=self.font_manager.apply_size
         )
 
     def pick_date(self, var: tk.StringVar, widget: tk.Widget = None):
@@ -476,9 +433,8 @@ class FlightManagerApp:
             row=7, column=0, sticky="nw", pady=5
         )
 
-        font_size = int(self.db.get_setting("font_size", 10))
         self.text_note = scrolledtext.ScrolledText(
-            self.input_frame, height=4, width=40, font=("Segoe UI", font_size)
+            self.input_frame, height=4, width=40, font=theme.MAIN
         )
         self.text_note.grid(
             row=7, column=1, columnspan=2, sticky="nsew", pady=5
