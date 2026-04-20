@@ -695,14 +695,32 @@ class FlightManagerApp:
             self.sort_desc = True
         self.load_logs()
 
+    def _get_param_initial_dir(self) -> Optional[str]:
+        """Returns the best initial directory for the parameter file dialog."""
+        vehicle = self.combo_vehicle.get()
+        if vehicle:
+            last = self.db.get_setting(f"last_param_path_{vehicle}", "")
+            if last and os.path.exists(last):
+                return os.path.dirname(last)
+        default = self.db.get_setting("default_param_path", "")
+        if default and os.path.isdir(default):
+            return default
+        return None
+
     def browse_param_file(self):
         """Opens a file dialog to select a parameter file."""
-        filename = filedialog.askopenfilename(title="Select Parameter File")
+        filename = filedialog.askopenfilename(
+            title="Select Parameter File",
+            initialdir=self._get_param_initial_dir()
+        )
         if filename:
             self.entry_param_file.state(["!readonly"])
             self.entry_param_file.delete(0, tk.END)
             self.entry_param_file.insert(0, filename)
             self.entry_param_file.state(["readonly"])
+            vehicle = self.combo_vehicle.get()
+            if vehicle:
+                self.db.set_setting(f"last_param_path_{vehicle}", filename)
 
     def browse_log_file(self):
         """Opens a file dialog to select a flight log file."""
@@ -913,7 +931,11 @@ class FlightManagerApp:
         self.entry_flight_no.insert(0, str(next_id))
 
     def save_log(self):
-        """Validates and initiates the log saving process."""
+        """Validates and initiates the log saving process.
+
+        If only preflight check items fail (not required fields), offers the
+        user the option to force save and bypass those failures.
+        """
         flight_no = self.entry_flight_no.get().strip()
         date = self.log_date_var.get().strip()
         vehicle = self.combo_vehicle.get().strip()
@@ -924,15 +946,29 @@ class FlightManagerApp:
         for name in self.dynamic_widgets:
             self.validate_item(name)
 
-        # 1. Validate using LogService
-        is_valid, errors = services.LogService.validate_log_entry(
+        # Check required fields first (Flight ID, Date, Vehicle)
+        req_ok, req_errors = services.LogService.validate_log_entry(
+            flight_no, date, vehicle, {}, skip_checklist=True
+        )
+        if not req_ok:
+            messagebox.showwarning(
+                "Validation Failed",
+                "Validation Errors:\n\n" + "\n".join(req_errors)
+            )
+            return
+
+        # Check full validation including preflight checklist
+        is_valid, chk_errors = services.LogService.validate_log_entry(
             flight_no, date, vehicle, self.dynamic_widgets
         )
-
         if not is_valid:
-            msg = "Validation Errors:\n\n" + "\n".join(errors)
-            messagebox.showwarning("Validation Failed", msg)
-            return
+            msg = (
+                "Preflight check failed:\n\n"
+                + "\n".join(chk_errors)
+                + "\n\nForce save anyway?"
+            )
+            if not messagebox.askyesno("Preflight Failed", msg):
+                return
 
         # Prepare Param Content
         param_file = self.entry_param_file.get().strip()
@@ -947,7 +983,7 @@ class FlightManagerApp:
                 )
                 return
 
-        # 2. Prepare Payload using LogService
+        # Prepare Payload using LogService
         log_data = services.LogService.prepare_log_payload(
             flight_no, date, vehicle, mission, note,
             self.dynamic_widgets, param_content

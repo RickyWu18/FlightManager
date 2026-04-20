@@ -196,6 +196,42 @@ class PreferencesDialog(BaseSettingsDialog):
             f_frame, text="pts", font=("Segoe UI", 11)
         ).pack(side=tk.LEFT, padx=5)
 
+        ttk.Label(
+            tab, text="Default Parameter Path:", font=("Segoe UI", 11, "bold")
+        ).pack(anchor="w", pady=(0, 5))
+        ttk.Label(
+            tab,
+            text="Folder used as starting directory when browsing for parameters.",
+            font=("Segoe UI", 9),
+            foreground="gray"
+        ).pack(anchor="w", pady=(0, 5))
+        path_frame = ttk.Frame(tab)
+        path_frame.pack(fill=tk.X, pady=(0, 10))
+        self.default_param_path_var = tk.StringVar(
+            value=self.db.get_setting("default_param_path", "")
+        )
+        ttk.Entry(
+            path_frame,
+            textvariable=self.default_param_path_var,
+            font=("Segoe UI", 11)
+        ).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
+        ttk.Button(
+            path_frame,
+            text="Browse...",
+            command=self._browse_default_param_path
+        ).pack(side=tk.LEFT)
+
+    def _browse_default_param_path(self):
+        """Opens a directory chooser for the default parameter path."""
+        current = self.default_param_path_var.get()
+        initial = current if current and os.path.isdir(current) else None
+        chosen = filedialog.askdirectory(
+            title="Select Default Parameter Folder",
+            initialdir=initial
+        )
+        if chosen:
+            self.default_param_path_var.set(chosen)
+
     def create_data_tab(self):
         """Creates the Data & Permissions tab."""
         tab = ttk.Frame(self.notebook, padding=20)
@@ -273,6 +309,7 @@ class PreferencesDialog(BaseSettingsDialog):
             self.db.set_setting(key, "1" if var.get() else "0")
         self.db.set_setting("log_max_size_gb", str(self.max_size_var.get()))
         self.db.set_setting("log_retention_days", str(self.retention_var.get()))
+        self.db.set_setting("default_param_path", self.default_param_path_var.get())
 
         if self.on_save_callback:
             self.on_save_callback(new_size)
