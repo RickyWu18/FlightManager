@@ -376,7 +376,6 @@ class FlightManagerApp:
         )
         self.combo_vehicle = ttk.Combobox(self.input_frame, state="readonly")
         self.combo_vehicle.grid(row=1, column=1, sticky="ew", pady=5)
-        self.combo_vehicle.bind("<<ComboboxSelected>>", self._on_vehicle_selected)
 
         # Flight ID
         ttk.Label(self.input_frame, text="Flight ID:").grid(
@@ -722,18 +721,6 @@ class FlightManagerApp:
             vehicle = self.combo_vehicle.get()
             if vehicle:
                 self.db.set_setting(f"last_param_path_{vehicle}", filename)
-
-    def _on_vehicle_selected(self, unused_event=None):
-        """Auto-populates param file with the last used path for the vehicle."""
-        vehicle = self.combo_vehicle.get()
-        if not vehicle:
-            return
-        last = self.db.get_setting(f"last_param_path_{vehicle}", "")
-        if last and os.path.exists(last):
-            self.entry_param_file.state(["!readonly"])
-            self.entry_param_file.delete(0, tk.END)
-            self.entry_param_file.insert(0, last)
-            self.entry_param_file.state(["readonly"])
 
     def browse_log_file(self):
         """Opens a file dialog to select a flight log file."""
